@@ -31,23 +31,60 @@ df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.replace('\xa
 # Ensure Time column is in datetime format
 df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
 
-# Convert lateral with error handling
-def convert_lateral(value):
+# Convert value with error handling
+def convert_value(value):
+    """
+    Converts any value like '40R' or '20L' to numerical form:
+    - '40R' becomes -40
+    - '20L' becomes 20
+    Returns None for invalid entries.
+    """
     try:
-        number, direction = value.split()
+        value = str(value).strip()  # Ensure value is a string and remove spaces
+        number, direction = value[:-1], value[-1].upper()  # Split number and direction
         number = float(number)
-        return -number if direction == 'R' else number
+        return -number if direction == 'R' else number if direction == 'L' else None
     except (ValueError, AttributeError):
-        return None  # Default value for invalid entries
+        return None  # Return None for invalid entries
 
-if 'Lateral_yds' in df.columns:
-    df['Lateral_yds'] = df['Lateral_yds'].apply(convert_lateral)
-else:
-    st.error("The column 'Lateral_yds' is missing from the data.")
+# Convert entire column and handle missing column errors
+def convert_column(df, col):
+    """
+    Converts all values in a column using convert_value.
+    Handles missing column errors gracefully.
+    """
+    if col in df.columns:
+        df[col] = df[col].apply(convert_value)
+        print(f"Column '{col}' successfully converted.")
+    else:
+        st.error(f"The column '{col}' is missing from the data.")
+# Convert all the columns that have L & R in the data        
+lrcols = ['Swing_H','Spin_Axis','Lateral_yds','FTP','FTT','Club_Path','Launch_H']
+for col in lrcols:
+    convert_column(df,col)
 
 # Create a categorical 'Session' using a conversion of Time to strings
 df['Session'] = df['Time'].dt.strftime('%Y %b %d %I:%M %p')  # Or any simpler string representation
 df['Session'] = df['Session'].astype('category')
+
+# Function to remove outliers based on IQR
+def remove_outliers(data, column):
+    Q1 = data[column].quantile(0.25)
+    Q3 = data[column].quantile(0.75)
+    IQR = Q3 - Q1
+    lower_bound = Q1 - 1.5 * IQR
+    return data[data[column] >= lower_bound]
+
+# Remove outliers for 'Carry_yds' column
+df = remove_outliers(df, 'Carry_yds')
+
+# Calculate average yardage grouped by Golfer and Club
+average_yardage = df.groupby(['Golfer', 'Club'])['Carry_yds'].mean().reset_index()
+average_yardage.rename(columns={'Carry_yds': 'Average_Carry_yds'}, inplace=True)
+average_yardage['Average_Carry_yds'] = average_yardage['Average_Carry_yds'].round(1)
+
+# Pivot table for display
+pivot_table = average_yardage.pivot(index='Club', columns='Golfer', values='Average_Carry_yds')
 
 dfall = df.copy()
 
@@ -56,6 +93,9 @@ dfall = df.copy()
 #       'Dynamic Loft', 'Club Path', 'Launch H', 'Launch V', 'Low Point ftin','DescentV', 'Curve Dist yds', 'Lateral Impact in', 'Vertical Impact in',
 #       'Mode', 'Location', 'Unnamed_35', 'Unnamed_36', 'Unnamed_37','Unnamed_38', 'Unnamed_39', 'Unnamed_40', 'Comment', 'User1', 'User2','Exclude', 'Session']
 
+numcols = ['Ball_mph','Club_mph','Smash_Factor','Carry_yds','Total_yds','Roll_yds',
+           'Swing_H','Spin_rpm','Height_ft','Time_s','AOA','Spin_Loft','Swing_V','Spin_Axis','Lateral_yds','FTP','FTT',
+           'Dynamic_Loft','Club_Path','Launch_H','Launch_V','Low_Point_ftin','DescentV','Curve_Dist_yds','Lateral_Impact_in','Vertical_Impact_in']
 
 # Sidebar description -------------------------------------------------------------------------------------------
 st.sidebar.title("Filter Shots")
@@ -126,7 +166,7 @@ if len(x) > 1 and len(y) > 1:
     ellipse_coords[0] += x.mean()
     ellipse_coords[1] += y.mean()
 
-    fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='90% CI Ellipse',
+    fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='80% CI Ellipse',
                               line=dict(color='red', dash='dash')))
 
 
@@ -177,7 +217,7 @@ for i, row in mean_values.iterrows():
 
 ###################################################################################################################
 
-tab1, tab2 = st.tabs(["Tab1", "Tab2"])
+tab1, tab2, tab3, tab4 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice"])
 
 with tab1:
     row1_col1, row1_col2 = st.columns(2)
@@ -216,3 +256,30 @@ with tab2:
     with bottom_row[2]:
         st.write("Box Plot")
         st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
+with tab3:
+    st.write("### Average Yardage by Golfer and Club")
+    st.dataframe(pivot_table,height=600)
+with tab4:
+    # Create two columns
+    col1, col2, col3, col4 = st.columns(4)
+    # Place the first selectbox in the first column
+    with col1:
+        ycol = st.selectbox('Select column for y axis', numcols) 
+    # Place the second selectbox in the second column
+    with col2:
+        xcol = st.selectbox('Select column for x axis', numcols)
+    with col3:
+        # Choose what to color on 
+        choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
+        color_on2 = st.selectbox('Select ColorOn 2', choices)
+    with col4:
+        # Allow the user to set the chart height dynamically
+        chart_height = st.slider('Set chart height (in pixels)', min_value=400, max_value=1200, value=800, step=50)
+
+##### fig7 #####
+    ##### fig7 #####
+    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+" versus "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
+    # Adjust the chart's height using update_layout
+    fig7.update_layout( height=chart_height )  # Set your desired height here
+
+    st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
