@@ -3,6 +3,8 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 #-----------------------  has to be called first
 # Set the page layout to wide
@@ -187,17 +189,23 @@ fig4 = px.scatter(df, x='AOA', y='Height_ft', color=color_on, title="Height of B
                   color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
 
 ##### fig5 #####
-xvar_choice = 'Roll_yds'
-yvar_choice = 'Spin_rpm'
-df[xvar_choice] = pd.to_numeric(df[xvar_choice], errors='coerce')
+# xvar_choice = 'Roll_yds'
+# yvar_choice = 'Spin_rpm'
+# df[xvar_choice] = pd.to_numeric(df[xvar_choice], errors='coerce')
 
-fig5 = px.scatter(df, x=xvar_choice, y=yvar_choice, color=color_on, title="Roll vs Spin",
-                  color_discrete_sequence=px.colors.qualitative.Bold, hover_data=['Shot_Type', 'Club'])
-fig5.update_yaxes(range=[0, None])
-fig5.update_layout(
-    xaxis=dict(showline=True, mirror=True, linecolor='black'),
-    yaxis=dict(showline=True, mirror=True, linecolor='black')
-)
+# fig5 = px.scatter(df, x=xvar_choice, y=yvar_choice, color=color_on, title="Roll vs Spin",
+#                   color_discrete_sequence=px.colors.qualitative.Bold, hover_data=['Shot_Type', 'Club'])
+# fig5.update_yaxes(range=[0, None])
+# fig5.update_layout(
+#     xaxis=dict(showline=True, mirror=True, linecolor='black'),
+#     yaxis=dict(showline=True, mirror=True, linecolor='black')
+# )
+df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
+df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
+
+fig5,ax5 = plt.subplots()
+sns.scatterplot(data=df,x='Smash_Factor',y='Carry_yds',hue=color_on,ax=ax5)
+
 
 #########################  FIGURES FOR TAB2 ######################################################################
 # Create a box plot
@@ -217,7 +225,7 @@ for i, row in mean_values.iterrows():
 
 ###################################################################################################################
 
-tab1, tab2, tab3, tab4 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn"])
 
 with tab1:
     row1_col1, row1_col2 = st.columns(2)
@@ -260,7 +268,7 @@ with tab3:
     st.write("### Average Yardage by Golfer and Club")
     st.dataframe(pivot_table,height=600)
 with tab4:
-    # Create two columns
+    # Create 4 columns for the inputs to be contained
     col1, col2, col3, col4 = st.columns(4)
     # Place the first selectbox in the first column
     with col1:
@@ -269,7 +277,7 @@ with tab4:
     with col2:
         xcol = st.selectbox('Select column for x axis', numcols)
     with col3:
-        # Choose what to color on 
+        # Choose what to color on separately for this tab (ie color_on2)
         choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
         color_on2 = st.selectbox('Select ColorOn 2', choices)
     with col4:
@@ -281,5 +289,17 @@ with tab4:
     fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+" versus "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
     # Adjust the chart's height using update_layout
     fig7.update_layout( height=chart_height )  # Set your desired height here
-
     st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
+
+with tab5:
+    df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
+    df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
+
+    # fig8,ax5 = plt.subplots(figsize=(10, 5))  # Adjust figsize as needed)
+    # sns.scatterplot(data=df,x='Smash_Factor',y='Carry_yds',hue=color_on,ax=ax5)
+    # st.pyplot(fig8)
+
+    # Create an lmplot (no ax parameter)
+    sns_plot = sns.lmplot(data=df, x='Smash_Factor', y='Carry_yds', hue=color_on, height=5, aspect=2)
+    # Display the lmplot in Streamlit
+    st.pyplot(sns_plot.figure)      
