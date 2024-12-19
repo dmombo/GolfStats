@@ -1,3 +1,5 @@
 plotly
 streamlit
 openpyxl
+matplotlib
+seaborn
