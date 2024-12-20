@@ -5,13 +5,13 @@ import plotly.graph_objects as go
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+sns.set_theme(style="darkgrid")
 
 #-----------------------  has to be called first
 # Set the page layout to wide
 st.set_page_config(layout="wide")
 
 # TO RUN THIS, USE TERMINAL
-# streamlit run e:\iCloudDrive\Drop\Python_dropbox\Python\2024\Streamlit_Golf_Stats.py
 # streamlit run C:\Users\dmomb\OneDrive\Python\Projects\GolfDec24\Golf_Stats_v2.py
 # Turn on 'Always re-run' option on your app (in the web browser), then every time you save code changes, they'll automatically show in the app
 
@@ -299,7 +299,25 @@ with tab5:
     # sns.scatterplot(data=df,x='Smash_Factor',y='Carry_yds',hue=color_on,ax=ax5)
     # st.pyplot(fig8)
 
-    # Create an lmplot (no ax parameter)
-    sns_plot = sns.lmplot(data=df, x='Smash_Factor', y='Carry_yds', hue=color_on, height=5, aspect=2)
-    # Display the lmplot in Streamlit
-    st.pyplot(sns_plot.figure)      
+
+    col_a,col_b = st.columns(2)
+
+    with col_a:
+        # Create an lmplot (no ax parameter)
+        sns_plot = sns.lmplot(data=df, x='Smash_Factor', y='Carry_yds', hue=color_on, height=4, aspect=2)
+        # Display the lmplot in Streamlit
+        st.pyplot(sns_plot.figure) 
+    with col_b:
+        sns_plot = sns.relplot(data=df, x='Club_mph', y='Carry_yds',size='Smash_Factor',hue='Golfer',style='Time',height=4, aspect=2)
+        st.pyplot(sns_plot.figure)     
+
+    col_c,col_d = st.columns(2)
+
+    with col_c:
+        # Create an lmplot (no ax parameter)
+        sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',element='step', height=4, aspect=2)
+        # Display the lmplot in Streamlit
+        st.pyplot(sns_plot.figure) 
+    with col_d:
+        sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',kind='kde',fill=True, height=4, aspect=2)
+        st.pyplot(sns_plot.figure)     
