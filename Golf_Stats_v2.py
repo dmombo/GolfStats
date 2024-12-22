@@ -78,15 +78,23 @@ def remove_outliers(data, column):
     return data[data[column] >= lower_bound]
 
 # Remove outliers for 'Carry_yds' column
-df = remove_outliers(df, 'Carry_yds')
+df_stats = remove_outliers(df, 'Carry_yds')
 
 # Calculate average yardage grouped by Golfer and Club
-average_yardage = df.groupby(['Golfer', 'Club'])['Carry_yds'].mean().reset_index()
+df_avg = df_stats.groupby(['Golfer', 'Club','Session'])['Carry_yds'].mean().reset_index()
+average_yardage = df_stats.groupby(['Golfer', 'Club'])['Carry_yds'].mean().reset_index()
 average_yardage.rename(columns={'Carry_yds': 'Average_Carry_yds'}, inplace=True)
 average_yardage['Average_Carry_yds'] = average_yardage['Average_Carry_yds'].round(1)
 
 # Pivot table for display
-pivot_table = average_yardage.pivot(index='Club', columns='Golfer', values='Average_Carry_yds')
+pivot_avgyds = average_yardage.pivot(index='Club', columns='Golfer', values='Average_Carry_yds')
+
+# Calculate counts grouped by Golfer and Club
+shot_counts = df_stats.groupby(['Golfer', 'Club'])['Carry_yds'].count().reset_index()
+shot_counts.rename(columns={'Carry_yds': 'Shot_Count'}, inplace=True)
+
+# Pivot table for display
+pivot_counts = shot_counts.pivot(index='Club', columns='Golfer', values='Shot_Count')
 
 dfall = df.copy()
 
@@ -225,7 +233,7 @@ for i, row in mean_values.iterrows():
 
 ###################################################################################################################
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances"])
 
 with tab1:
     row1_col1, row1_col2 = st.columns(2)
@@ -265,8 +273,13 @@ with tab2:
         st.write("Box Plot")
         st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
 with tab3:
-    st.write("### Average Yardage by Golfer and Club")
-    st.dataframe(pivot_table,height=600)
+    col1_3, col2_3 = st.columns(2)
+    with col1_3:
+        st.write("### Average Yardage by Golfer and Club")
+        st.dataframe(pivot_avgyds,height=600)
+    with col2_3:
+        st.write("### Shot Counts")
+        st.dataframe(pivot_counts,height=600)
 with tab4:
     # Create 4 columns for the inputs to be contained
     col1, col2, col3, col4 = st.columns(4)
@@ -292,6 +305,7 @@ with tab4:
     st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
 
 with tab5:
+    ###################################### Seaborn Statistical Plots ##########################################################################
     df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
     df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
 
@@ -304,6 +318,7 @@ with tab5:
 
     with col_a:
         # Create an lmplot (no ax parameter)
+        
         sns_plot = sns.lmplot(data=df, x='Smash_Factor', y='Carry_yds', hue=color_on, height=4, aspect=2)
         # Display the lmplot in Streamlit
         st.pyplot(sns_plot.figure) 
@@ -314,10 +329,61 @@ with tab5:
     col_c,col_d = st.columns(2)
 
     with col_c:
-        # Create an lmplot (no ax parameter)
-        sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',element='step', height=4, aspect=2)
-        # Display the lmplot in Streamlit
-        st.pyplot(sns_plot.figure) 
+            # Create 2 columns for the inputs to be contained
+            colc1, colc2 = st.columns(2)
+            with colc1:
+                # Select which variable to plot
+                xcol2 = st.selectbox('Select column for kde plot', numcols)
+            with colc2:
+                plotchoice = st.selectbox('Select type of plot', ['histogram','kernel density'])
+            if plotchoice == 'histogram':
+                plot_type = 'hist'
+            else:
+                plot_type = 'kde'
+
+            sns_plot = sns.displot(data=df, x=xcol2, hue='Golfer',kind=plot_type,fill=True, height=4, aspect=2)
+            # Display the lmplot in Streamlit
+            st.pyplot(sns_plot.figure) 
     with col_d:
         sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',kind='kde',fill=True, height=4, aspect=2)
         st.pyplot(sns_plot.figure)     
+
+with tab6:
+        ##########################  Images that show the Mevo+ Data Parameters and their Meaning  ###################################
+        #  Assumes these images are in the top folder
+        st.write("Flightscope Mevo+ Club and Ball Parameters")
+        st.image("Club Data 1.jpg")
+        st.image("Club Data 2.jpg")
+        st.image("Ball Data 1.jpg")
+        st.image("Ball Data 2.jpg")
+        st.image("Ball Data 3.jpg")
+        st.image("Ball-Flight.jpg")
+
+with tab7:
+    ####################### Line Plot for Golfer ######################################################################################
+    st.write("### Carry Distance by Session for Specific Golfer")
+
+    # Filter data for a specific golfer
+    golfer_name = st.selectbox("Select Golfer", df['Golfer'].unique())
+    filtered_df = df_avg[df_avg['Golfer'] == golfer_name]
+
+    # Create line plot using Plotly
+    fig_golfer = px.line(
+        filtered_df,
+        x='Session',
+        y='Carry_yds',
+        color='Club',
+        title=f"Carry Distance by Session for {golfer_name}",
+        labels={'Carry_yds': 'Carry Distance (yds)', 'Session': 'Session'},
+    )
+
+    # # Update layout for better visualization
+    # fig_golfer.update_layout(
+    #     xaxis_title="Session",
+    #     yaxis_title="Carry Distance (yds)",
+    #     legend_title="Club",
+    #     xaxis=dict(type='category')  # Ensures sessions are treated as categories
+    # )
+
+    # Display the plot
+    st.plotly_chart(fig_golfer, use_container_width=True)
