@@ -80,14 +80,22 @@ def remove_outliers(data, column):
 # Remove outliers for 'Carry_yds' column
 df_stats = remove_outliers(df, 'Carry_yds')
 
-# Calculate average yardage grouped by Golfer and Club
-df_avg = df_stats.groupby(['Golfer', 'Club','Session'])['Carry_yds'].mean().reset_index()
-average_yardage = df_stats.groupby(['Golfer', 'Club'])['Carry_yds'].mean().reset_index()
-average_yardage.rename(columns={'Carry_yds': 'Average_Carry_yds'}, inplace=True)
-average_yardage['Average_Carry_yds'] = average_yardage['Average_Carry_yds'].round(1)
+
+def calc_avg(data,column):
+    # Calculate average yardage grouped by Golfer and Club
+    average_yardage = df_stats.groupby(['Golfer', 'Club'])[column].mean().reset_index()
+    average_yardage['Carry_yds'] = average_yardage['Carry_yds'].round(1)
+    return average_yardage
+
+def calc_avg_session(data,column):
+    # Calculate average yardage grouped by Golfer and Club and Session
+    return data.groupby(['Golfer', 'Club','Session'])[column].mean().reset_index()
+
+average_yardage = calc_avg(df_stats,'Carry_yds')
+df_avg = calc_avg_session(df_stats,'Carry_yds')
 
 # Pivot table for display
-pivot_avgyds = average_yardage.pivot(index='Club', columns='Golfer', values='Average_Carry_yds')
+pivot_avgyds = average_yardage.pivot(index='Club', columns='Golfer', values='Carry_yds')
 
 # Calculate counts grouped by Golfer and Club
 shot_counts = df_stats.groupby(['Golfer', 'Club'])['Carry_yds'].count().reset_index()
@@ -351,7 +359,8 @@ with tab5:
 with tab6:
         ##########################  Images that show the Mevo+ Data Parameters and their Meaning  ###################################
         #  Assumes these images are in the top folder
-        st.write("Flightscope Mevo+ Club and Ball Parameters")
+        st.write("# Flightscope Mevo+ Club and Ball Parameters")
+        st.write("### NOTE: Left is positive, Right is Negative when looking at club path etc.")
         st.image("Club Data 1.jpg")
         st.image("Club Data 2.jpg")
         st.image("Ball Data 1.jpg")
