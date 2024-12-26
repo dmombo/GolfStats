@@ -5,7 +5,14 @@ import plotly.graph_objects as go
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.io as pio
+import statsmodels.api as sm
+# Force the default template to "plotly"
+pio.templates.default = "plotly"
+
 sns.set_theme(style="darkgrid")
+
+
 
 #-----------------------  has to be called first
 # Set the page layout to wide
@@ -27,12 +34,7 @@ def load_data(filepath):
 
 df = load_data(fol + fn)
 
-# Clean column names to ensure consistency
-df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.replace('\xa0', ' ').str.strip().str.replace(' ', '_')
-
-# Ensure Time column is in datetime format
-df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
-
+#### Helper functions   ################################################################
 # Convert value with error handling
 def convert_value(value):
     """
@@ -40,6 +42,7 @@ def convert_value(value):
     - '40R' becomes -40
     - '20L' becomes 20
     Returns None for invalid entries.
+    ## USED in convert_column ##
     """
     try:
         value = str(value).strip()  # Ensure value is a string and remove spaces
@@ -54,57 +57,40 @@ def convert_column(df, col):
     """
     Converts all values in a column using convert_value.
     Handles missing column errors gracefully.
+    ## USED in process_df ##
     """
     if col in df.columns:
         df[col] = df[col].apply(convert_value)
-        print(f"Column '{col}' successfully converted.")
+        #print(f"Column '{col}' successfully converted.")
     else:
         st.error(f"The column '{col}' is missing from the data.")
+######################################################################################################################################
+# Cleaning the column names
+# Clean column names to ensure consistency
+df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.replace('\xa0', ' ').str.strip().str.replace(' ', '_')
+
+# Ensure Time column is in datetime format
+df['Time'] = pd.to_datetime(df['Time'], errors='coerce')
+
+# Convert Time to strings for Session variable
+df['Session'] = df['Time'].dt.strftime('%Y %b %d %I:%M %p')  # Or any simpler string representation
+
 # Convert all the columns that have L & R in the data        
 lrcols = ['Swing_H','Spin_Axis','Lateral_yds','FTP','FTT','Club_Path','Launch_H']
 for col in lrcols:
     convert_column(df,col)
 
-# Create a categorical 'Session' using a conversion of Time to strings
-df['Session'] = df['Time'].dt.strftime('%Y %b %d %I:%M %p')  # Or any simpler string representation
-df['Session'] = df['Session'].astype('category')
+# 1. Parse & sort
+df['Session_dt'] = pd.to_datetime(df['Session'], format='%Y %b %d %I:%M %p')
+df = df.sort_values('Session_dt').copy()
+# 2. Convert Session to ordered categorical
+sorted_sessions = df['Session'].unique()
+df['Session'] = pd.Categorical(
+    df['Session'],
+    categories=sorted_sessions,
+    ordered=True             )
 
-# Function to remove outliers based on IQR
-def remove_outliers(data, column):
-    Q1 = data[column].quantile(0.25)
-    Q3 = data[column].quantile(0.75)
-    IQR = Q3 - Q1
-    lower_bound = Q1 - 1.5 * IQR
-    return data[data[column] >= lower_bound]
-
-# Remove outliers for 'Carry_yds' column
-df_stats = remove_outliers(df, 'Carry_yds')
-
-
-def calc_avg(data,column):
-    # Calculate average yardage grouped by Golfer and Club
-    average_yardage = df_stats.groupby(['Golfer', 'Club'])[column].mean().reset_index()
-    average_yardage['Carry_yds'] = average_yardage['Carry_yds'].round(1)
-    return average_yardage
-
-def calc_avg_session(data,column):
-    # Calculate average yardage grouped by Golfer and Club and Session
-    return data.groupby(['Golfer', 'Club','Session'])[column].mean().reset_index()
-
-average_yardage = calc_avg(df_stats,'Carry_yds')
-df_avg = calc_avg_session(df_stats,'Carry_yds')
-
-# Pivot table for display
-pivot_avgyds = average_yardage.pivot(index='Club', columns='Golfer', values='Carry_yds')
-
-# Calculate counts grouped by Golfer and Club
-shot_counts = df_stats.groupby(['Golfer', 'Club'])['Carry_yds'].count().reset_index()
-shot_counts.rename(columns={'Carry_yds': 'Shot_Count'}, inplace=True)
-
-# Pivot table for display
-pivot_counts = shot_counts.pivot(index='Club', columns='Golfer', values='Shot_Count')
-
-dfall = df.copy()
+df['Shot_Type'] = df['Shot_Type'].astype(str)
 
 # Columns Available: ['Mombo_ShotID', 'Club', 'Time', 'Golfer', 'Shot', 'Video', 'Ball mph','Club mph', 'Smash_Factor', 'Carry yds', 'Total yds', 'Roll yds',
 #       'Swing H', 'Spin rpm', 'Height ft', 'Time s', 'AOA', 'Spin Loft','Swing V', 'Spin Axis', 'Lateral yds', 'Shot Type', 'FTP', 'FTT',
@@ -115,28 +101,167 @@ numcols = ['Ball_mph','Club_mph','Smash_Factor','Carry_yds','Total_yds','Roll_yd
            'Swing_H','Spin_rpm','Height_ft','Time_s','AOA','Spin_Loft','Swing_V','Spin_Axis','Lateral_yds','FTP','FTT',
            'Dynamic_Loft','Club_Path','Launch_H','Launch_V','Low_Point_ftin','DescentV','Curve_Dist_yds','Lateral_Impact_in','Vertical_Impact_in']
 
-# Sidebar description -------------------------------------------------------------------------------------------
-st.sidebar.title("Filter Shots")
-st.sidebar.write("Choose Time/Golfer/Club")
+###################################################################################################################################################################
+
+def process_df(df):
+    clubs = ['Driver','3 Wood','5 Wood','4 Iron','5 Iron','6 Iron','7 Iron', '8 Iron','9 Iron', 'Pitching Wedge',  'Gap Wedge','Sand Wedge' , 'Lob Wedge']
+    dimensions = ['Club','Golfer','Session','Shot_Type','Mode']
+    num_columns = ['Ball_mph', 'Club_mph', 'Smash_Factor', 'Carry_yds','Total_yds', 'Roll_yds', 'Swing_H', 'Height_ft', 'Time_s', 'AOA',
+       'Spin_Loft', 'Swing_V', 'Spin_Axis', 'Lateral_yds', 'FTP', 'FTT','Dynamic_Loft', 'Club_Path', 'Launch_H', 'Launch_V', 'DescentV',
+       'Curve_Dist_yds', 'Lateral_Impact_in', 'Vertical_Impact_in']
+    
+
+    # 3. Pivot with Sessions
+    df_pivot = df.pivot_table(
+        index='Club',
+        columns=['Golfer', 'Session'],
+        values=num_columns, 
+        aggfunc='mean')
+    # 4. (Optional) Reindex columns to ensure Session is in ascending chronological order
+    df_sessions = df_pivot.reindex(columns=sorted_sessions, level='Session')
+
+    df_golfer = df.pivot_table(
+        index='Club',
+        columns=['Golfer'],
+        values=num_columns, 
+        aggfunc='mean')
+    df_golfer = df_golfer.reindex(clubs)       # Puts the clubs in the order of the list 'clubs'
+    df_sessions = df_sessions.reindex(clubs)   # Puts the clubs in the order of the list 'clubs'
+    
+    return df,df_sessions,df_golfer
+
+
+
+# Ensure numeric conversion for specified columns
+def ensure_numeric(df, columns):
+    """
+    Converts specified columns to numeric, coercing errors to NaN.
+    """
+    for col in columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        else:
+            st.error(f"Column '{col}' not found in the dataframe.")
+
+# Apply numeric conversion to the specified numeric columns
+ensure_numeric(df, numcols)
+
+########################################################   PROCESSING COMPLETE ##########################################
+
+# Calculate counts grouped by Golfer and Club
+shot_counts = df.groupby(['Golfer', 'Club'])['Carry_yds'].count().reset_index()
+shot_counts.rename(columns={'Carry_yds': 'Shot_Count'}, inplace=True)
+# Pivot table for display
+counts_golfer = shot_counts.pivot(index='Club', columns='Golfer', values='Shot_Count')
+
+dfall = df.copy()
+
+
+
+# Sidebar Setup -------------------------------------------------------------------------------------------
+# Sidebar helper functions
+
 def return_filtered_df(df, col, search_term):
     if search_term != "All":
         df = df[df[col] == search_term].copy()
     return df
+def remove_outliers_iqr(group, cols):
+    """
+    Given a DataFrame 'group' (already filtered by a particular
+    Golfer, Session, Club), remove outliers in each column in 'cols'
+    using the 1.5*IQR rule.
+    Returns the group without outliers.
+    """
+    for col in cols:
+        if col not in group.columns:
+            # skip if the col doesn't exist in group
+            continue
+
+        # Only consider valid (non-NaN) data
+        col_data = group[col].dropna()
+        if col_data.empty:
+            # no data for this group in this column
+            continue
+
+        Q1 = col_data.quantile(0.25)
+        Q3 = col_data.quantile(0.75)
+        IQR = Q3 - Q1
+
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+
+        # Create a boolean mask for outliers
+        outlier_mask = (group[col] < lower_bound) | (group[col] > upper_bound)
+
+        # Remove outliers by setting them to NaN or dropping them
+        # Option A: If you want to *drop* rows with outliers:
+        group = group[~outlier_mask]
+
+        # Option B (Alternative):
+        # If you want to keep the row but set the value to NaN:
+        # group.loc[outlier_mask, col] = float('NaN')
+
+    return group
+# 2. Apply the function groupwise to calculate the df_no_outliers on any column
+df_no_outliers = (
+    df
+    .groupby(['Golfer', 'Session', 'Club'], group_keys=False,observed=False)
+    .apply(lambda grp: remove_outliers_iqr(grp, numcols))
+)
+def remove_outliers_iqr_single_column(group, column):
+    """
+    Remove outliers based on the IQR method for a single column.
+    Returns the group without outliers for the specified column.
+    """
+    if column not in group.columns:
+        # Skip if the column doesn't exist in the group
+        st.error(f"Column '{column}' not found in the dataframe.")
+        return group
+
+    # Only consider valid (non-NaN) data
+    col_data = group[column].dropna()
+    if col_data.empty:
+        # No data for this group in this column
+        return group
+
+    Q1 = col_data.quantile(0.25)
+    Q3 = col_data.quantile(0.75)
+    IQR = Q3 - Q1
+
+    lower_bound = Q1 - 1.5 * IQR
+    upper_bound = Q3 + 1.5 * IQR
+
+    # Filter rows based on the outlier condition for the specific column
+    return group[(group[column] >= lower_bound) & (group[column] <= upper_bound)]
+
+st.sidebar.title("Filter Shots")
+st.sidebar.write("Choose Desired Options")
+
+filter_choice = st.sidebar.selectbox('Choose filtering of Data', ['All', 'IQR_All', 'IQR_Carry_yds'])
+
+if filter_choice == 'All':
+    df = dfall.copy()
+elif filter_choice == 'IQR_All':
+    df = df_no_outliers.copy()
+elif filter_choice == 'IQR_Carry_yds':
+    # Apply IQR filtering only on the 'Carry_yds' column, starting with the full dataset
+    df = remove_outliers_iqr_single_column(dfall, 'Carry_yds')
+
 
 col = 'Time'
 choices = ['All'] + df[col].unique().tolist()
-search_term = st.sidebar.selectbox('Select ' + col, choices)
-df = return_filtered_df(df, col, search_term)
+sb_time = st.sidebar.selectbox('Select ' + col, choices)
+df = return_filtered_df(df, col, sb_time)
 
 col = 'Golfer'
 choices = ['All'] + dfall[col].unique().tolist()
-search_term = st.sidebar.selectbox('Select ' + col, choices)
-df = return_filtered_df(df, col, search_term)
+sb_golfer = st.sidebar.selectbox('Select ' + col, choices)
+df = return_filtered_df(df, col, sb_golfer)
 
 col = 'Club'
 choices = ['All'] + df[col].unique().tolist()
-search_term = st.sidebar.selectbox('Select ' + col, choices)
-df = return_filtered_df(df, col, search_term)
+sb_club = st.sidebar.selectbox('Select ' + col, choices)
+df = return_filtered_df(df, col, sb_club)
 
 # Dark grey line separator
 st.sidebar.markdown("<hr style='border: 1px solid #333333;'>", unsafe_allow_html=True)
@@ -146,10 +271,17 @@ st.sidebar.markdown("<br>", unsafe_allow_html=True)
 choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
 color_on = st.sidebar.selectbox('Select ColorOn', choices)
 
-df['Shot_Type'] = df['Shot_Type'].astype(str)
+
 
 #----------------------------------------------------------------------------------------------------------------
 hov_data = ['Time', 'Club', 'Golfer', 'Shot_Type']
+
+#################    PROCESS THE DF FILE.  CALC AVGS BY SESSION AND GOLFER TOTAL AFTER FILTERING ##############################
+
+df, df_sessions, df_golfer = process_df(df)       # #  Club in rows, Golfer, Session in Columns as MultiIndex  (all metrics)
+
+
+
 ###### Golf Analysis and Plots ##########################################################
 df['Shot_Type'] = df['Shot_Type'].astype(str)
 
@@ -243,7 +375,7 @@ for i, row in mean_values.iterrows():
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances"])
 
-with tab1:
+with tab1:                                                                          ## TAB 1 ##
     row1_col1, row1_col2 = st.columns(2)
     with row1_col1:
         st.write("Title: Col 1, Row 1")
@@ -260,7 +392,7 @@ with tab1:
         st.write("Title: Col 2, Row 2")
         st.plotly_chart(fig3, use_container_width=True, key="T1C2R2")
 
-with tab2:
+with tab2:                                                                          ## TAB 2 ##
     with st.container():
         row1 = st.columns([1, 7, 1])
         with row1[1]:
@@ -280,15 +412,18 @@ with tab2:
     with bottom_row[2]:
         st.write("Box Plot")
         st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
-with tab3:
-    col1_3, col2_3 = st.columns(2)
+with tab3:                                                                          ## TAB 3 ##
+    col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:
-        st.write("### Average Yardage by Golfer and Club")
-        st.dataframe(pivot_avgyds,height=600)
+        st.write("### Average Carry Yds")
+        st.dataframe(df_golfer['Carry_yds'].round(1),height=600)
     with col2_3:
+        st.write("### Average Total Yds")
+        st.dataframe(df_golfer['Total_yds'].round(1),height=600)
+    with col3_3:
         st.write("### Shot Counts")
-        st.dataframe(pivot_counts,height=600)
-with tab4:
+        st.dataframe(counts_golfer,height=600)
+with tab4:                                                                          ## TAB 4 ##
     # Create 4 columns for the inputs to be contained
     col1, col2, col3, col4 = st.columns(4)
     # Place the first selectbox in the first column
@@ -307,12 +442,12 @@ with tab4:
 
 ##### fig7 #####
     ##### fig7 #####
-    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+" versus "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
+    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+" versus "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data,trendline='ols')
     # Adjust the chart's height using update_layout
     fig7.update_layout( height=chart_height )  # Set your desired height here
     st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
 
-with tab5:
+with tab5:                                                                          ## TAB 5 ##
     ###################################### Seaborn Statistical Plots ##########################################################################
     df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
     df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
@@ -341,7 +476,7 @@ with tab5:
             colc1, colc2 = st.columns(2)
             with colc1:
                 # Select which variable to plot
-                xcol2 = st.selectbox('Select column for kde plot', numcols)
+                xcol2 = st.selectbox('Select column for distribution', numcols)
             with colc2:
                 plotchoice = st.selectbox('Select type of plot', ['histogram','kernel density'])
             if plotchoice == 'histogram':
@@ -356,7 +491,7 @@ with tab5:
         sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',kind='kde',fill=True, height=4, aspect=2)
         st.pyplot(sns_plot.figure)     
 
-with tab6:
+with tab6:                                                                          ## TAB 6 ##
         ##########################  Images that show the Mevo+ Data Parameters and their Meaning  ###################################
         #  Assumes these images are in the top folder
         st.write("# Flightscope Mevo+ Club and Ball Parameters")
@@ -372,27 +507,46 @@ with tab7:
     ####################### Line Plot for Golfer ######################################################################################
     st.write("### Carry Distance by Session for Specific Golfer")
 
-    # Filter data for a specific golfer
-    golfer_name = st.selectbox("Select Golfer", df['Golfer'].unique())
-    filtered_df = df_avg[df_avg['Golfer'] == golfer_name]
+    # Filter data for a specific golfer and metric
+    col1_7, col2_7 = st.columns(2)
+    with col1_7:
+        metric_name = st.selectbox("Select Metric", numcols)
+        metric_golfer_sessions = df_sessions[metric_name]   #  Club in rows, Golfer, Session in Columns as MultiIndex
+    with col2_7:
+        golfer_name = st.selectbox("Select Golfer", df['Golfer'].unique())    
+        filtered_df = metric_golfer_sessions[golfer_name]
 
-    # Create line plot using Plotly
-    fig_golfer = px.line(
-        filtered_df,
-        x='Session',
-        y='Carry_yds',
-        color='Club',
-        title=f"Carry Distance by Session for {golfer_name}",
-        labels={'Carry_yds': 'Carry Distance (yds)', 'Session': 'Session'},
+    # --- 2) Melt the DataFrame from wide to long ---
+    df_melt = filtered_df.reset_index().melt(
+        id_vars='Club',             # 'Club' stays as its own column
+        var_name='Session',         # The old column names (session strings) become this column
+        value_name='Metric'         # The cell values become 'Metric'
     )
 
-    # # Update layout for better visualization
-    # fig_golfer.update_layout(
-    #     xaxis_title="Session",
-    #     yaxis_title="Carry Distance (yds)",
-    #     legend_title="Club",
-    #     xaxis=dict(type='category')  # Ensures sessions are treated as categories
-    # )
+    # --- 3) Parse Session to a datetime so we can plot chronologically
+    df_melt['Session_dt'] = pd.to_datetime(
+        df_melt['Session'],
+        format='%Y %b %d %I:%M %p',
+        errors='coerce'
+    )
 
-    # Display the plot
+    # --- 4) Create the line plot using Plotly Express
+    fig_golfer = px.line(
+        data_frame=df_melt,
+        x='Session_dt',   # time on the x-axis
+        y='Metric',       # the numeric metric on the y-axis
+        color='Club',     # one line per club
+        markers=True      # optional: show markers for data points
+    )
+    # Force a known set of discrete colors
+    color_discrete_sequence=px.colors.qualitative.Plotly
+
+    # --- 5) Customize as needed ---
+    fig_golfer.update_layout(
+        xaxis_title='Session',
+        yaxis_title='Metric',
+        title='Metric by Club over Sessions'
+    )
+    fig_golfer.update_traces(connectgaps=True)
+   
     st.plotly_chart(fig_golfer, use_container_width=True)
