@@ -12,8 +12,6 @@ pio.templates.default = "plotly"
 
 sns.set_theme(style="darkgrid")
 
-
-
 #-----------------------  has to be called first
 # Set the page layout to wide
 st.set_page_config(layout="wide")
@@ -65,7 +63,7 @@ def convert_column(df, col):
     else:
         st.error(f"The column '{col}' is missing from the data.")
 ######################################################################################################################################
-# Cleaning the column names
+# Cleaning the column names and getting df ready for the rest of the application
 # Clean column names to ensure consistency
 df.columns = df.columns.str.replace(r'[^\w\s]', '', regex=True).str.replace('\xa0', ' ').str.strip().str.replace(' ', '_')
 
@@ -274,7 +272,7 @@ color_on = st.sidebar.selectbox('Select ColorOn', choices)
 
 
 #----------------------------------------------------------------------------------------------------------------
-hov_data = ['Time', 'Club', 'Golfer', 'Shot_Type']
+hov_data = ['Time', 'Club', 'Golfer', 'Shot_Type','Total_yds']
 
 #################    PROCESS THE DF FILE.  CALC AVGS BY SESSION AND GOLFER TOTAL AFTER FILTERING ##############################
 
@@ -356,20 +354,24 @@ sns.scatterplot(data=df,x='Smash_Factor',y='Carry_yds',hue=color_on,ax=ax5)
 
 
 #########################  FIGURES FOR TAB2 ######################################################################
-# Create a box plot
-fig6 = px.box(df, x='Session', y="Carry_yds", points='all', color='Golfer')
-mean_values = df.groupby('Session')['Carry_yds'].median().reset_index()
 
-# Add the median as text annotations
-for i, row in mean_values.iterrows():
-    fig6.add_annotation(
-        x=row['Session'],
-        y=row['Carry_yds'],
-        text=f"{row['Carry_yds']:.1f}",
-        showarrow=False,  # Avoid cluttering with arrows
-        font=dict(size=12, color='black'),
-        bgcolor="white"
-    )
+def create_fig6(var_choice,colvar):
+    # Create a box plot
+    #  var_choice = "Carry_yds"   (Example)
+    fig6 = px.box(df, x='Session', y=var_choice, points='all', color=colvar,hover_data=hov_data)
+    mean_values = df.groupby('Session')[var_choice].median().reset_index()
+
+    # Add the median as text annotations
+    for i, row in mean_values.iterrows():
+        fig6.add_annotation(
+            x=row['Session'],
+            y=row[var_choice],
+            text=f"{row[var_choice]:.1f}",
+            showarrow=False,  # Avoid cluttering with arrows
+            font=dict(size=12, color='black'),
+            bgcolor="white"
+        )
+    return fig6
 
 ###################################################################################################################
 
@@ -398,19 +400,14 @@ with tab2:                                                                      
         with row1[1]:
             st.plotly_chart(fig1, use_container_width=True, key="T2C1R1")
 
-    bottom_row = st.columns([3, 1, 5])
+    bottom_row = st.columns([1,6])
 
     with bottom_row[0]:
-        sl_img = fol + "Golf_Logo.jpeg"
-        st.write("Bottom Row - Box 2")
-        st.image(sl_img, caption="Logo", use_container_width=True)
+        boxplot_metric = st.selectbox('Select Metric for Boxplot', numcols)
 
     with bottom_row[1]:
-        st.write("Bottom Row - Box 1")
-        st.metric(label="Sales", value="$1,200", delta="+15%")
-
-    with bottom_row[2]:
-        st.write("Box Plot")
+        fig6 = create_fig6(boxplot_metric,color_on)
+        st.write("Box Plot for "+boxplot_metric)
         st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
 with tab3:                                                                          ## TAB 3 ##
     col1_3, col2_3, col3_3 = st.columns(3)
