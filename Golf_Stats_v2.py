@@ -285,41 +285,43 @@ df['Shot_Type'] = df['Shot_Type'].astype(str)
 
 #######################  FIGURES FOR TAB1 #############################################################################################################
 ##### fig1 #####
-x_max = df["Carry_yds"].max() * 1.25
-max_abs_y = max(abs(df["Lateral_yds"].min()), abs(df["Lateral_yds"].max()))
-scale_fac = 1.5
-y_min, y_max = -max_abs_y*scale_fac, max_abs_y*scale_fac
+def create_fig1(x_choice):
+    x_max = df[x_choice].max() * 1.25
+    max_abs_y = max(abs(df["Lateral_yds"].min()), abs(df["Lateral_yds"].max()))
+    scale_fac = 1.5
+    y_min, y_max = -max_abs_y*scale_fac, max_abs_y*scale_fac
 
-fig1 = px.scatter(df, x="Carry_yds", y='Lateral_yds', color=color_on, title="Dispersion Field", color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
-fig1.update_xaxes(range=[0, x_max])
-fig1.update_yaxes(range=[y_min, y_max])
-fig1.update_layout(yaxis_scaleanchor="x")
+    fig1 = px.scatter(df, x=x_choice, y='Lateral_yds', color=color_on, title="Dispersion Field", color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
+    fig1.update_xaxes(range=[0, x_max])
+    fig1.update_yaxes(range=[y_min, y_max])
+    fig1.update_layout(yaxis_scaleanchor="x")  # Makes the scale correct so x & y distances are the same on the plot
 
-# Add confidence ellipse to fig1
-x = df['Carry_yds'].dropna()
-y = df['Lateral_yds'].dropna()
-if len(x) > 1 and len(y) > 1:
-    cov = np.cov(x, y)
-    lambda_, v = np.linalg.eig(cov)
-    lambda_ = np.sqrt(lambda_)
+    # Add confidence ellipse to fig1
+    x = df[x_choice].dropna()
+    y = df['Lateral_yds'].dropna()
+    if len(x) > 1 and len(y) > 1:
+        cov = np.cov(x, y)
+        lambda_, v = np.linalg.eig(cov)
+        lambda_ = np.sqrt(lambda_)
 
-    theta = np.degrees(np.arctan2(*v[:, 0][::-1]))
-    ellipse_x = np.linspace(0, 2 * np.pi, 100)
-    # np.sqrt(2.71) corrresponds to 90% confidence, np.sqrt(5.99) corresponds to 95% confidence,np.sqrt(1.64) corresponds to 80% confidence
-    ellipse_coords = np.array([2 * np.sqrt(1.64) * lambda_[0] * np.cos(ellipse_x),
-                                2 * np.sqrt(1.64) * lambda_[1] * np.sin(ellipse_x)])
-    rotation_matrix = np.array([[np.cos(np.radians(theta)), -np.sin(np.radians(theta))],
-                                 [np.sin(np.radians(theta)), np.cos(np.radians(theta))]])
-    ellipse_coords = rotation_matrix @ ellipse_coords
-    ellipse_coords[0] += x.mean()
-    ellipse_coords[1] += y.mean()
+        theta = np.degrees(np.arctan2(*v[:, 0][::-1]))
+        ellipse_x = np.linspace(0, 2 * np.pi, 100)
+        # np.sqrt(2.71) corrresponds to 90% confidence, np.sqrt(5.99) corresponds to 95% confidence,np.sqrt(1.64) corresponds to 80% confidence
+        ellipse_coords = np.array([2 * np.sqrt(1.64) * lambda_[0] * np.cos(ellipse_x),
+                                    2 * np.sqrt(1.64) * lambda_[1] * np.sin(ellipse_x)])
+        rotation_matrix = np.array([[np.cos(np.radians(theta)), -np.sin(np.radians(theta))],
+                                    [np.sin(np.radians(theta)), np.cos(np.radians(theta))]])
+        ellipse_coords = rotation_matrix @ ellipse_coords
+        ellipse_coords[0] += x.mean()
+        ellipse_coords[1] += y.mean()
 
-    fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='80% CI Ellipse',
-                              line=dict(color='red', dash='dash')))
-
+        fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='80% CI Ellipse',
+                                line=dict(color='red', dash='dash')))
+    return fig1
 
 ##### fig2 #####
-fig2 = px.scatter(df, x="Carry_yds", y='Height_ft', color=color_on, title="Height vs Carry(yds)", color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
+
+fig2 = px.scatter(df, x="Carry_yds", y='Height_ft', color=color_on, title="Height vs Carry (yds)", color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
 
 ##### fig3 #####
 df['Club_mph'] = pd.to_numeric(df['Club_mph'], errors='coerce')
@@ -381,7 +383,7 @@ with tab1:                                                                      
     row1_col1, row1_col2 = st.columns(2)
     with row1_col1:
         st.write("Title: Col 1, Row 1")
-        st.plotly_chart(fig1, use_container_width=True, key="T1C1R1")
+        st.plotly_chart(create_fig1("Carry_yds"), use_container_width=True, key="T1C1R1")
     with row1_col2:
         st.write("Title: Col 2, Row 1")
         st.plotly_chart(fig2, use_container_width=True, key="T1C2R1")
@@ -396,19 +398,25 @@ with tab1:                                                                      
 
 with tab2:                                                                          ## TAB 2 ##
     with st.container():
-        row1 = st.columns([1, 7, 1])
+
+        row1 = st.columns([1,6])
+
+        with row1[0]:
+            disp_x = st.selectbox('Select X axis', ["Carry_yds","Total_yds"])
+
         with row1[1]:
-            st.plotly_chart(fig1, use_container_width=True, key="T2C1R1")
+            st.plotly_chart(create_fig1(disp_x), use_container_width=True, key="T2C1R1")
 
-    bottom_row = st.columns([1,6])
+        bottom_row = st.columns([1,6])
 
-    with bottom_row[0]:
-        boxplot_metric = st.selectbox('Select Metric for Boxplot', numcols)
+        with bottom_row[0]:
+            boxplot_metric = st.selectbox('Select Metric for Boxplot', numcols)
 
-    with bottom_row[1]:
-        fig6 = create_fig6(boxplot_metric,color_on)
-        st.write("Box Plot for "+boxplot_metric)
-        st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
+        with bottom_row[1]:
+            fig6 = create_fig6(boxplot_metric,color_on)
+            st.write("Box Plot for "+boxplot_metric)
+            st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
+
 with tab3:                                                                          ## TAB 3 ##
     col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:
@@ -420,6 +428,7 @@ with tab3:                                                                      
     with col3_3:
         st.write("### Shot Counts")
         st.dataframe(counts_golfer,height=600)
+
 with tab4:                                                                          ## TAB 4 ##
     # Create 4 columns for the inputs to be contained
     col1, col2, col3, col4 = st.columns(4)
