@@ -245,7 +245,7 @@ elif filter_choice == 'IQR_Carry_yds':
     # Apply IQR filtering only on the 'Carry_yds' column, starting with the full dataset
     df = remove_outliers_iqr_single_column(dfall, 'Carry_yds')
 
-
+####  THIS SECTION FILTERS THE DATA BASED ON THE SIDEBAR SELECTIONS  ############################################
 col = 'Time'
 choices = ['All'] + df[col].unique().tolist()
 sb_time = st.sidebar.selectbox('Select ' + col, choices)
@@ -268,7 +268,7 @@ st.sidebar.markdown("<br>", unsafe_allow_html=True)
 # Choose what to color on 
 choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
 color_on = st.sidebar.selectbox('Select ColorOn', choices)
-
+########### df is now the filtered data on the code below   #######################################################################
 
 
 #----------------------------------------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ df, df_sessions, df_golfer = process_df(df)       # #  Club in rows, Golfer, Ses
 ###### Golf Analysis and Plots ##########################################################
 df['Shot_Type'] = df['Shot_Type'].astype(str)
 
-#######################  FIGURES FOR TAB1 #############################################################################################################
+#######################  FIGURES FOR TAB1 #########################################################################################
 ##### fig1 #####
 def create_fig1(x_choice):
     x_max = df[x_choice].max() * 1.25
@@ -376,8 +376,39 @@ def create_fig6(var_choice,colvar):
     return fig6
 
 ###################################################################################################################
+def create_fig8(df, fig8_type='kde'):
+    if fig8_type in ['kde', 'scatter', 'hex', 'reg', 'resid', 'hist']:
+        # Adjusting the size of the plot and switching to a filled density plot
+        if fig8_type == 'hex' or fig8_type == 'scatter':
+            g = sns.jointplot(
+                data=df, 
+                x='Lateral_Impact_in', 
+                y='Vertical_Impact_in', 
+                kind=fig8_type,  # Hexbin or scatter plot
+                height=4  # Reduce height
+            )
+        else:
+            g = sns.jointplot(
+                data=df, 
+                x='Lateral_Impact_in', 
+                y='Vertical_Impact_in', 
+                kind=fig8_type,  # plot type, kde default
+                height=4  # Reduce height
+            )
+            if fig8_type == 'kde':
+                g.plot_joint(sns.kdeplot, fill=True)  # Fill only for density plot
+                g.plot_joint(sns.scatterplot, alpha=0.2,color='red')  # Overlay scatter points
+        g.figure.set_size_inches(6, 4)  # Smaller figure size
+        return g.figure
+    elif fig8_type == 'contour':
+        # Using Plotly for contour plots
+        f = px.density_contour(df, x='Lateral_Impact_in', y='Vertical_Impact_in')
+        f.update_traces(contours_coloring="fill", contours_showlabels=True)
+        return f
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances"])
+###################################################################################################################
+
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact"])
 
 with tab1:                                                                          ## TAB 1 ##
     row1_col1, row1_col2 = st.columns(2)
@@ -556,3 +587,21 @@ with tab7:
     fig_golfer.update_traces(connectgaps=True)
    
     st.plotly_chart(fig_golfer, use_container_width=True)
+
+    with tab8:
+        figchoices = ['scatter', 'hex', 'kde', 'contour', 'reg', 'resid', 'hist']
+
+        with st.container():
+            bottomrow = st.columns([4, 4])
+            with bottomrow[0]:
+                st.write("### Golf Ball Impact Data (on the clubface)")
+                fig_to_plot = st.selectbox('Select Chart Type', figchoices, index=2)
+
+            toprow = st.columns([4, 4])
+            with toprow[0]:
+                st.write("#### Vertical and Lateral Impact Data")
+                fig8 = create_fig8(df, fig8_type=fig_to_plot)
+                if fig_to_plot == 'contour':
+                    st.plotly_chart(fig8)
+                else:
+                    st.pyplot(fig8)
