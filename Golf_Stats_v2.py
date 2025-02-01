@@ -616,6 +616,9 @@ with tab9:
         cols = st.columns(3)
         # Iterate over each column in the current chunk
         for j, xcol2 in enumerate(numcols[i:i+3]):
+            # Skip if xcol2 is the same as ycol2
+            if xcol2 == ycol2:
+                continue  # Skip this iteration            
             # Create the scatter plot
             fig9 = px.scatter(
                 df,
