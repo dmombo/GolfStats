@@ -408,9 +408,9 @@ def create_fig8(df, fig8_type='kde'):
 
 ###################################################################################################################
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact","All Plots"])
 
-with tab1:                                                                          ## TAB 1 ##
+with tab1:                                                                          ## TAB 1 4 Plots  ##
     row1_col1, row1_col2 = st.columns(2)
     with row1_col1:
         st.write("Title: Col 1, Row 1")
@@ -427,7 +427,7 @@ with tab1:                                                                      
         st.write("Title: Col 2, Row 2")
         st.plotly_chart(fig3, use_container_width=True, key="T1C2R2")
 
-with tab2:                                                                          ## TAB 2 ##
+with tab2:                                                                          ## TAB 2 BoxPlots ##
     with st.container():
 
         row1 = st.columns([1,6])
@@ -448,7 +448,7 @@ with tab2:                                                                      
             st.write("Box Plot for "+boxplot_metric)
             st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
 
-with tab3:                                                                          ## TAB 3 ##
+with tab3:                                                                          ## TAB 3 Stats ##
     col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:
         st.write("### Average Carry Yds")
@@ -460,15 +460,15 @@ with tab3:                                                                      
         st.write("### Shot Counts")
         st.dataframe(counts_golfer,height=600)
 
-with tab4:                                                                          ## TAB 4 ##
+with tab4:                                                                          ## TAB 4 Plotchoice ##
     # Create 4 columns for the inputs to be contained
     col1, col2, col3, col4 = st.columns(4)
     # Place the first selectbox in the first column
     with col1:
-        ycol = st.selectbox('Select column for y axis', numcols) 
+        ycol = st.selectbox('Select column for y axis', numcols,index=4) 
     # Place the second selectbox in the second column
     with col2:
-        xcol = st.selectbox('Select column for x axis', numcols)
+        xcol = st.selectbox('Select column for x axis', numcols, index=1)
     with col3:
         # Choose what to color on separately for this tab (ie color_on2)
         choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
@@ -605,3 +605,33 @@ with tab7:
                     st.plotly_chart(fig8)
                 else:
                     st.pyplot(fig8)
+
+with tab9:
+    # Select Y axis
+    ycol2 = st.selectbox('Select Y axis', ["Carry_yds", "Total_yds"], key="xcol2_selectbox")
+
+    # Loop over numcols in chunks of 3
+    for i in range(0, len(numcols), 3):
+        # Create a new row with 3 columns
+        cols = st.columns(3)
+        # Iterate over each column in the current chunk
+        for j, xcol2 in enumerate(numcols[i:i+3]):
+            # Create the scatter plot
+            fig9 = px.scatter(
+                df,
+                x=xcol2,
+                y=ycol2,
+                color=color_on,
+                title=f"{ycol2} versus {xcol2}",
+                color_discrete_sequence=px.colors.qualitative.Bold,
+                hover_data=hov_data,
+                trendline='ols',
+                trendline_scope="overall"  # Ensures only one trendline across all data
+            )
+            # Set the chart height
+            fig9.update_layout(height=400)
+            # Place the chart in the appropriate column
+            with cols[j]:
+                st.plotly_chart(fig9, use_container_width=True, key="T9" + xcol2)
+
+     
