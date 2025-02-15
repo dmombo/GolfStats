@@ -376,30 +376,62 @@ def create_fig6(var_choice,colvar):
     return fig6
 
 ###################################################################################################################
-def create_fig8(df, fig8_type='kde'):
+def create_fig8(df, fig8_type='kde'):  ## Used for Tab 8 Impact ##
     if fig8_type in ['kde', 'scatter', 'hex', 'reg', 'resid', 'hist']:
-        # Adjusting the size of the plot and switching to a filled density plot
-        if fig8_type == 'hex' or fig8_type == 'scatter':
-            g = sns.jointplot(
-                data=df, 
-                x='Lateral_Impact_in', 
-                y='Vertical_Impact_in', 
-                kind=fig8_type,  # Hexbin or scatter plot
-                height=4  # Reduce height
-            )
+        num_bins = 5  # Define number of bins
+
+        # Ensure Total_yds exists in the DataFrame
+        if 'Total_yds' not in df.columns:
+            raise ValueError("Total_yds column is missing from the DataFrame.")
+
+        # Initialize an empty column for bin labels
+        df['Total_yds_bin_label'] = np.nan
+
+        # Compute bin ranges dynamically per Club
+        if 'Club' in df.columns:
+            for club, group in df.groupby('Club'):
+                try:
+                    _, bin_edges = pd.qcut(group['Total_yds'], num_bins, retbins=True, duplicates='drop')
+                    bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])} yds" for i in range(len(bin_edges)-1)]
+                    df.loc[group.index, 'Total_yds_bin_label'] = pd.cut(
+                        group['Total_yds'], bins=bin_edges, labels=bin_labels, include_lowest=True
+                    )
+                except ValueError:
+                    df.loc[group.index, 'Total_yds_bin_label'] = "N/A"  # Fallback if not enough data
         else:
-            g = sns.jointplot(
-                data=df, 
-                x='Lateral_Impact_in', 
-                y='Vertical_Impact_in', 
-                kind=fig8_type,  # plot type, kde default
-                height=4  # Reduce height
-            )
-            if fig8_type == 'kde':
-                g.plot_joint(sns.kdeplot, fill=True)  # Fill only for density plot
-                g.plot_joint(sns.scatterplot, alpha=0.2,color='red')  # Overlay scatter points
-        g.figure.set_size_inches(6, 4)  # Smaller figure size
+            _, bin_edges = pd.qcut(df['Total_yds'], num_bins, retbins=True, duplicates='drop')
+            bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])} yds" for i in range(len(bin_edges)-1)]
+            df['Total_yds_bin_label'] = pd.cut(df['Total_yds'], bins=bin_edges, labels=bin_labels, include_lowest=True)
+
+        # Define colormap
+        cmap = plt.get_cmap("viridis", num_bins)  # Choose colormap
+
+        # Always use scatter as the base to avoid 'None' error
+        g = sns.jointplot(
+            data=df, 
+            x='Lateral_Impact_in', 
+            y='Vertical_Impact_in', 
+            kind="scatter",  # Always use scatter as base
+            height=4
+        )
+
+        if fig8_type == 'kde':
+            g.plot_joint(sns.kdeplot, fill=True, levels=20)  # KDE density overlay
+            scatter = g.plot_joint(
+                sns.scatterplot, 
+                hue=df['Total_yds_bin_label'],  # Use readable bin labels
+                palette=cmap.colors, 
+                alpha=0.6
+            )  # Overlay scatter points with colors by bin
+
+            # Adjust legend font size correctly
+            legend = g.ax_joint.legend(title="Total Yards")  # Access the legend via ax_joint
+            for text in legend.get_texts():
+                text.set_fontsize(8)  # Reduce legend font size
+
+        g.figure.set_size_inches(12, 6)  # Adjust figure size
         return g.figure
+
     elif fig8_type == 'contour':
         # Using Plotly for contour plots
         f = px.density_contour(df, x='Lateral_Impact_in', y='Vertical_Impact_in')
@@ -484,7 +516,7 @@ with tab4:                                                                      
     fig7.update_layout( height=chart_height )  # Set your desired height here
     st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
 
-with tab5:                                                                          ## TAB 5 ##
+with tab5:                                                                          ## TAB 5  Seaborn ##
     ###################################### Seaborn Statistical Plots ##########################################################################
     df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
     df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
@@ -528,7 +560,7 @@ with tab5:                                                                      
         sns_plot = sns.displot(data=df, x='Carry_yds', hue='Golfer',kind='kde',fill=True, height=4, aspect=2)
         st.pyplot(sns_plot.figure)     
 
-with tab6:                                                                          ## TAB 6 ##
+with tab6:                                                                          ## TAB 6 Parameters (Description) ##
         ##########################  Images that show the Mevo+ Data Parameters and their Meaning  ###################################
         #  Assumes these images are in the top folder
         st.write("# Flightscope Mevo+ Club and Ball Parameters")
@@ -540,7 +572,7 @@ with tab6:                                                                      
         st.image("Ball Data 3.jpg")
         st.image("Ball-Flight.jpg")
 
-with tab7:
+with tab7:                                                                         ## TAB 7 Distances ##
     ####################### Line Plot for Golfer ######################################################################################
     st.write("### Carry Distance by Session for Specific Golfer")
 
@@ -588,7 +620,7 @@ with tab7:
    
     st.plotly_chart(fig_golfer, use_container_width=True)
 
-    with tab8:
+    with tab8:                                                                          ## TAB 8 Impact ##
         figchoices = ['scatter', 'hex', 'kde', 'contour', 'reg', 'resid', 'hist']
 
         with st.container():
@@ -606,7 +638,7 @@ with tab7:
                 else:
                     st.pyplot(fig8)
 
-with tab9:
+with tab9:                                                                         ## TAB 9 All Plots ##
     # Select Y axis
     ycol2 = st.selectbox('Select Y axis', ["Carry_yds", "Total_yds"], key="xcol2_selectbox")
 
