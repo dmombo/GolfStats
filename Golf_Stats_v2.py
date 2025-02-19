@@ -1,5 +1,6 @@
 import pandas as pd
 import streamlit as st
+from streamlit_plotly_events import plotly_events  # Ensure this is installed: pip install streamlit-plotly-events
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
@@ -7,6 +8,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.io as pio
 import statsmodels.api as sm
+import matplotlib.image as mpimg
+from scipy.stats import chi2
+
 # Force the default template to "plotly"
 pio.templates.default = "plotly"
 
@@ -283,7 +287,13 @@ df, df_sessions, df_golfer = process_df(df)       # #  Club in rows, Golfer, Ses
 ###### Golf Analysis and Plots ##########################################################
 df['Shot_Type'] = df['Shot_Type'].astype(str)
 
-#######################  FIGURES FOR TAB1 #########################################################################################
+def calculate_confidence_radius(confidence_percent):
+    """Calculate confidence radius for any confidence percentage."""
+    alpha = 1 - (confidence_percent / 100)
+    chi2_val = chi2.ppf(1 - alpha, df=2)  # Chi-squared value with 2 degrees of freedom
+    return np.sqrt(chi2_val)
+
+#######################  FIGURES FOR TAB1 ##########################################################################################
 ##### fig1 #####
 def create_fig1(x_choice):
     x_max = df[x_choice].max() * 1.25
@@ -297,8 +307,8 @@ def create_fig1(x_choice):
     fig1.update_layout(yaxis_scaleanchor="x")  # Makes the scale correct so x & y distances are the same on the plot
 
     # Add confidence ellipse to fig1
-    x = df[x_choice].dropna()
-    y = df['Lateral_yds'].dropna()
+    x = df[x_choice]#.dropna()
+    y = df['Lateral_yds']#.dropna()
     if len(x) > 1 and len(y) > 1:
         cov = np.cov(x, y)
         lambda_, v = np.linalg.eig(cov)
@@ -307,8 +317,9 @@ def create_fig1(x_choice):
         theta = np.degrees(np.arctan2(*v[:, 0][::-1]))
         ellipse_x = np.linspace(0, 2 * np.pi, 100)
         # np.sqrt(2.71) corrresponds to 90% confidence, np.sqrt(5.99) corresponds to 95% confidence,np.sqrt(1.64) corresponds to 80% confidence
-        ellipse_coords = np.array([2 * np.sqrt(1.64) * lambda_[0] * np.cos(ellipse_x),
-                                    2 * np.sqrt(1.64) * lambda_[1] * np.sin(ellipse_x)])
+        confidence_radius = calculate_confidence_radius(80)    #######  SET CONFIDENCE RADIUS HERE in %  ########
+        ellipse_coords = np.array([2 * np.sqrt(confidence_radius) * lambda_[0] * np.cos(ellipse_x),
+                                    2 * np.sqrt(confidence_radius) * lambda_[1] * np.sin(ellipse_x)])
         rotation_matrix = np.array([[np.cos(np.radians(theta)), -np.sin(np.radians(theta))],
                                     [np.sin(np.radians(theta)), np.cos(np.radians(theta))]])
         ellipse_coords = rotation_matrix @ ellipse_coords
@@ -316,6 +327,18 @@ def create_fig1(x_choice):
         ellipse_coords[1] += y.mean()
 
         fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='80% CI Ellipse',
+                                line=dict(color='red')))
+        ##############
+        confidence_radius = calculate_confidence_radius(1)    #######  SET CONFIDENCE RADIUS HERE in %  ########
+        ellipse_coords = np.array([2 * np.sqrt(confidence_radius) * lambda_[0] * np.cos(ellipse_x),
+                                    2 * np.sqrt(confidence_radius) * lambda_[1] * np.sin(ellipse_x)])
+        rotation_matrix = np.array([[np.cos(np.radians(theta)), -np.sin(np.radians(theta))],
+                                    [np.sin(np.radians(theta)), np.cos(np.radians(theta))]])
+        ellipse_coords = rotation_matrix @ ellipse_coords
+        ellipse_coords[0] += x.mean()
+        ellipse_coords[1] += y.mean()
+
+        fig1.add_trace(go.Scatter(x=ellipse_coords[0], y=ellipse_coords[1], mode='lines', name='1% CI Ellipse',
                                 line=dict(color='red', dash='dash')))
     return fig1
 
@@ -376,18 +399,15 @@ def create_fig6(var_choice,colvar):
     return fig6
 
 ###################################################################################################################
-def create_fig8(df, fig8_type='kde'):  ## Used for Tab 8 Impact ##
+def create_fig8(df, fig8_type='kde', background_image_path=None, image_scale=1.5):  # Image is the golf club
     if fig8_type in ['kde', 'scatter', 'hex', 'reg', 'resid', 'hist']:
-        num_bins = 5  # Define number of bins
+        num_bins = 5
 
-        # Ensure Total_yds exists in the DataFrame
         if 'Total_yds' not in df.columns:
             raise ValueError("Total_yds column is missing from the DataFrame.")
 
-        # Initialize an empty column for bin labels
         df['Total_yds_bin_label'] = np.nan
 
-        # Compute bin ranges dynamically per Club
         if 'Club' in df.columns:
             for club, group in df.groupby('Club'):
                 try:
@@ -397,66 +417,73 @@ def create_fig8(df, fig8_type='kde'):  ## Used for Tab 8 Impact ##
                         group['Total_yds'], bins=bin_edges, labels=bin_labels, include_lowest=True
                     )
                 except ValueError:
-                    df.loc[group.index, 'Total_yds_bin_label'] = "N/A"  # Fallback if not enough data
+                    df.loc[group.index, 'Total_yds_bin_label'] = "N/A"
         else:
             _, bin_edges = pd.qcut(df['Total_yds'], num_bins, retbins=True, duplicates='drop')
             bin_labels = [f"{int(bin_edges[i])}-{int(bin_edges[i+1])} yds" for i in range(len(bin_edges)-1)]
             df['Total_yds_bin_label'] = pd.cut(df['Total_yds'], bins=bin_edges, labels=bin_labels, include_lowest=True)
 
-        # Define colormap
-        cmap = plt.get_cmap("viridis", num_bins)  # Choose colormap
+        cmap = plt.get_cmap("viridis", num_bins)
 
-        # Always use scatter as the base to avoid 'None' error
         g = sns.jointplot(
-            data=df, 
-            x='Lateral_Impact_in', 
-            y='Vertical_Impact_in', 
-            kind="scatter",  # Always use scatter as base
+            data=df,
+            x='Lateral_Impact_in',
+            y='Vertical_Impact_in',
+            kind="scatter",
             height=4
         )
+        # Ensure square aspect ratio for x and y axes
+        g.ax_joint.set_aspect('equal')
+        g.ax_joint.set_xlim(-2, 2)
+        g.ax_joint.invert_xaxis()
+        background_image_path = 'golf_club.jpg'
+        if background_image_path:
+            img = mpimg.imread(background_image_path)
+
+            width = 4 * image_scale
+            height =  3 * image_scale  #(g.ax_joint.get_ylim()[1] - g.ax_joint.get_ylim()[0]) * 1.5 * image_scale
+            x_center = 0.75  # Shift image left by approximately 1/8 of the frame
+            y_center = 0.75 +(g.ax_joint.get_ylim()[0] + g.ax_joint.get_ylim()[1]) / 2
+            g.ax_joint.imshow(img, aspect='auto',
+                              extent=[x_center - width/2, x_center + width/2,
+                                      y_center - height/2, y_center + height/2],
+                              origin='upper', alpha=0.3, zorder=0)
 
         if fig8_type == 'kde':
-            g.plot_joint(sns.kdeplot, fill=True, levels=20)  # KDE density overlay
+            g.plot_joint(sns.kdeplot, fill=True, levels=20)
             scatter = g.plot_joint(
-                sns.scatterplot, 
-                hue=df['Total_yds_bin_label'],  # Use readable bin labels
-                palette=cmap.colors, 
+                sns.scatterplot,
+                hue=df['Total_yds_bin_label'],
+                palette=cmap.colors,
                 alpha=0.6
-            )  # Overlay scatter points with colors by bin
-
-            # Adjust legend font size correctly
-            legend = g.ax_joint.legend(title="Total Yards")  # Access the legend via ax_joint
+            )
+            legend = g.ax_joint.legend(title="Total Yards")
             for text in legend.get_texts():
-                text.set_fontsize(8)  # Reduce legend font size
+                text.set_fontsize(8)
 
-        g.figure.set_size_inches(12, 6)  # Adjust figure size
+        g.figure.set_size_inches(6, 4)
         return g.figure
 
-    elif fig8_type == 'contour':
-        # Using Plotly for contour plots
-        f = px.density_contour(df, x='Lateral_Impact_in', y='Vertical_Impact_in')
-        f.update_traces(contours_coloring="fill", contours_showlabels=True)
-        return f
 
-###################################################################################################################
+#######################################################################################################################
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact","All Plots"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9,tab10 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact","All Plots","Selected Data"])
 
 with tab1:                                                                          ## TAB 1 4 Plots  ##
     row1_col1, row1_col2 = st.columns(2)
     with row1_col1:
-        st.write("Title: Col 1, Row 1")
+        #st.write("Swing_H,Spin_Axis,Lateral_yds,FTP,FTT,Club_Path,Launch_H")
         st.plotly_chart(create_fig1("Carry_yds"), use_container_width=True, key="T1C1R1")
     with row1_col2:
-        st.write("Title: Col 2, Row 1")
+        #st.write("Title: Col 2, Row 1")
         st.plotly_chart(fig2, use_container_width=True, key="T1C2R1")
 
     row2_col1, row2_col2 = st.columns(2)
     with row2_col1:
-        st.write("Title: Col 1, Row 2")
+        #st.write("Title: Col 1, Row 2")
         st.plotly_chart(fig5, use_container_width=True, key="T1C1R2")
     with row2_col2:
-        st.write("Title: Col 2, Row 2")
+        #st.write("Title: Col 2, Row 2")
         st.plotly_chart(fig3, use_container_width=True, key="T1C2R2")
 
 with tab2:                                                                          ## TAB 2 BoxPlots ##
@@ -480,7 +507,7 @@ with tab2:                                                                      
             st.write("Box Plot for "+boxplot_metric)
             st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
 
-with tab3:                                                                          ## TAB 3 Stats ##
+with tab3:                                                                          ## TAB 3 Stats #####################
     col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:
         st.write("### Average Carry Yds")
@@ -492,26 +519,48 @@ with tab3:                                                                      
         st.write("### Shot Counts")
         st.dataframe(counts_golfer,height=600)
 
-with tab4:                                                                          ## TAB 4 Plotchoice ##
-    # Create 4 columns for the inputs to be contained
+# # Add CSS to reduce vertical spacing and ensure the top-level menu remains visible
+# st.markdown("""
+#     <style>
+#         .stSelectbox, .stSlider, .stPlotlyChart, .stMarkdown {
+#             margin-bottom: 5px; /* Reduce spacing between widgets */
+#         }
+#         .block-container {
+#             padding-top: 0.5rem;
+#             padding-bottom: 0.5rem;
+#         }
+#         header, footer, [data-testid="stSidebar"] {
+#             visibility: visible !important;
+#             display: block !important;
+#         }
+#         [data-testid="stToolbar"] {
+#             visibility: visible !important;
+#         }
+#     </style>
+# """, unsafe_allow_html=True)
+
+with tab4:  ## TAB 4 Plotchoice ##
     col1, col2, col3, col4 = st.columns(4)
-    # Place the first selectbox in the first column
+    
+    # Use larger text with st.markdown
+    st.markdown("""
+        <h2 style="font-size:22px; font-weight:bold;">
+        For Left/ Right Variables : Swing_H,Spin_Axis,Lateral_yds,FTP,FTT,Club_Path,Launch_H  Left is +ve, Right is -ve
+        </h2>
+    """, unsafe_allow_html=True)
+    
     with col1:
-        ycol = st.selectbox('Select column for y axis', numcols,index=4) 
-    # Place the second selectbox in the second column
+        ycol = st.selectbox('Y-axis column', numcols, index=4)
     with col2:
-        xcol = st.selectbox('Select column for x axis', numcols, index=1)
+        xcol = st.selectbox('X-axis column', numcols, index=1)
     with col3:
-        # Choose what to color on separately for this tab (ie color_on2)
-        choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
-        color_on2 = st.selectbox('Select ColorOn 2', choices)
+        color_on2 = st.selectbox('Color By', ['Time', 'Golfer', 'Club', 'Shot_Type'])
     with col4:
-        # Allow the user to set the chart height dynamically
-        chart_height = st.slider('Set chart height (in pixels)', min_value=400, max_value=1200, value=800, step=50)
+        chart_height = st.slider('Chart Height (px)', 400, 1200, 800, 50)
 
 ##### fig7 #####
     ##### fig7 #####
-    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+" versus "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data,trendline='ols')
+    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+"   versus   "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data,trendline='ols')
     # Adjust the chart's height using update_layout
     fig7.update_layout( height=chart_height )  # Set your desired height here
     st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
@@ -669,4 +718,25 @@ with tab9:                                                                      
             with cols[j]:
                 st.plotly_chart(fig9, use_container_width=True, key="T9" + xcol2)
 
-     
+with tab10:                                                                      ## TAB 10 Selected Data ##         
+    with st.container():
+        disp_x = st.selectbox('Select X axis', ["Carry_yds", "Total_yds"], key="selectbox_tab10")
+        
+        fig1 = create_fig1(disp_x)
+        
+        try:
+            selected_points = plotly_events(fig1, click_event=True, select_event=True, key="T10C1R1")
+        except NameError:
+            st.error("Error: plotly_events not found. Please install it using 'pip install streamlit-plotly-events'.")
+            selected_points = []
+        
+    # Display Filtered Data Table Based on Selection
+    if selected_points:
+        selected_ids = [pt['pointIndex'] for pt in selected_points if 'pointIndex' in pt]
+        if selected_ids:
+            filtered_df = df.iloc[selected_ids]
+            st.dataframe(filtered_df)
+        else:
+            st.write("No valid points selected.")
+    else:
+        st.write("Select points on the chart to view their details.")

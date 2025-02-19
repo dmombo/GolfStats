@@ -3,3 +3,6 @@ streamlit
 openpyxl
 matplotlib
 seaborn
+streamlit-plotly-events
+statsmodels
+scipy
