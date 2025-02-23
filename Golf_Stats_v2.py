@@ -103,6 +103,9 @@ numcols = ['Ball_mph','Club_mph','Smash_Factor','Carry_yds','Total_yds','Roll_yd
            'Swing_H','Spin_rpm','Height_ft','Time_s','AOA','Spin_Loft','Swing_V','Spin_Axis','Lateral_yds','FTP','FTT',
            'Dynamic_Loft','Club_Path','Launch_H','Launch_V','Low_Point_ftin','DescentV','Curve_Dist_yds','Lateral_Impact_in','Vertical_Impact_in']
 
+#  Columns to display in a data table
+col_display = ['Club', 'Time', 'Golfer', 'Shot_Type', 'Carry_yds', 'Total_yds', 'Roll_yds','Lateral_yds', 'Club_mph', 'Ball_mph', 'Smash_Factor',
+           'Swing_H','Swing_V','AOA','FTP','FTT','Low_Point_ftin','Lateral_Impact_in','Vertical_Impact_in','Spin_rpm','Spin_Axis']
 ###################################################################################################################################################################
 
 def process_df(df):
@@ -380,22 +383,59 @@ sns.scatterplot(data=df,x='Smash_Factor',y='Carry_yds',hue=color_on,ax=ax5)
 
 #########################  FIGURES FOR TAB2 ######################################################################
 
-def create_fig6(var_choice,colvar):
-    # Create a box plot
-    #  var_choice = "Carry_yds"   (Example)
-    fig6 = px.box(df, x='Session', y=var_choice, points='all', color=colvar,hover_data=hov_data)
-    mean_values = df.groupby('Session')[var_choice].median().reset_index()
+def create_fig6(df, var_choice, colvar, range_mode='normal'):
+    """
+    Creates a box plot for the selected variable over different sessions, with the option 
+    to color by a categorical variable and display median annotations.
 
+    Parameters:
+    df (pd.DataFrame): The dataset containing session data.
+    var_choice (str): The numerical variable to be plotted on the y-axis.
+    colvar (str): The categorical variable used for coloring the box plot.
+    range_mode (str, optional): The y-axis range mode. Defaults to 'normal'.
+        - 'normal': Allows natural scaling.
+        - 'tozero': Forces the y-axis to start at 0.
+
+    Returns:
+    plotly.graph_objects.Figure: A box plot with median annotations.
+    """
+    # Drop NA values only for the selected variable and 'Session'
+    df_filtered = df.dropna(subset=['Session', var_choice])
+    
+    # Convert 'Session' to an ordered categorical to maintain chronological order
+    sorted_sessions = df_filtered['Session'].dropna().unique()
+    df_filtered['Session'] = pd.Categorical(
+        df_filtered['Session'],
+        categories=sorted_sessions,
+        ordered=True
+    )
+    
+    # Create a box plot
+    fig6 = px.box(df_filtered, x='Session', y=var_choice, points='all', color=colvar, hover_data=hov_data)
+    
+    # Compute median values for annotation
+    mean_values = df_filtered.groupby('Session')[var_choice].median().reset_index()
+    
     # Add the median as text annotations
     for i, row in mean_values.iterrows():
         fig6.add_annotation(
             x=row['Session'],
             y=row[var_choice],
             text=f"{row[var_choice]:.1f}",
-            showarrow=False,  # Avoid cluttering with arrows
+            showarrow=False,
             font=dict(size=12, color='black'),
             bgcolor="white"
         )
+    
+    # Ensure the y-axis follows the correct range setting
+    if range_mode == 'tozero':
+        min_y = 0
+    else:
+        min_y = df_filtered[var_choice].min()
+    max_y = df_filtered[var_choice].max()
+    
+    fig6.update_layout(yaxis=dict(range=[min_y, max_y]))
+    
     return fig6
 
 ###################################################################################################################
@@ -486,7 +526,7 @@ with tab1:                                                                      
         #st.write("Title: Col 2, Row 2")
         st.plotly_chart(fig3, use_container_width=True, key="T1C2R2")
 
-with tab2:                                                                          ## TAB 2 BoxPlots ##
+with tab2:                                                                          ## TAB 2 BoxPlots ###################
     with st.container():
 
         row1 = st.columns([1,6])
@@ -501,9 +541,11 @@ with tab2:                                                                      
 
         with bottom_row[0]:
             boxplot_metric = st.selectbox('Select Metric for Boxplot', numcols)
+            # Change the range of the y-axis
+            range_choice = st.selectbox('Select Y-axis Range', ['normal', 'tozero'])
 
         with bottom_row[1]:
-            fig6 = create_fig6(boxplot_metric,color_on)
+            fig6 = create_fig6(df,boxplot_metric,color_on,range_choice)
             st.write("Box Plot for "+boxplot_metric)
             st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
 
@@ -519,27 +561,7 @@ with tab3:                                                                      
         st.write("### Shot Counts")
         st.dataframe(counts_golfer,height=600)
 
-# # Add CSS to reduce vertical spacing and ensure the top-level menu remains visible
-# st.markdown("""
-#     <style>
-#         .stSelectbox, .stSlider, .stPlotlyChart, .stMarkdown {
-#             margin-bottom: 5px; /* Reduce spacing between widgets */
-#         }
-#         .block-container {
-#             padding-top: 0.5rem;
-#             padding-bottom: 0.5rem;
-#         }
-#         header, footer, [data-testid="stSidebar"] {
-#             visibility: visible !important;
-#             display: block !important;
-#         }
-#         [data-testid="stToolbar"] {
-#             visibility: visible !important;
-#         }
-#     </style>
-# """, unsafe_allow_html=True)
-
-with tab4:  ## TAB 4 Plotchoice ##
+with tab4:                                                                          ## TAB 4 Plotchoice ##################
     col1, col2, col3, col4 = st.columns(4)
     
     # Use larger text with st.markdown
@@ -558,15 +580,22 @@ with tab4:  ## TAB 4 Plotchoice ##
     with col4:
         chart_height = st.slider('Chart Height (px)', 400, 1200, 800, 50)
 
-##### fig7 #####
-    ##### fig7 #####
-    fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+"   versus   "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data,trendline='ols')
-    # Adjust the chart's height using update_layout
-    fig7.update_layout( height=chart_height )  # Set your desired height here
-    st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
+    row2 = st.columns([1,6])
+    with row2[0]:
+        st.write("#### Dates Shown")
+        # Convert unique values to a DataFrame without column names
+        df_unique_times = pd.DataFrame(df['Time'].unique(), columns=[''])  # Empty column name
+        st.dataframe(df_unique_times, height=600)
+    
+    with row2[1]:
+        ##### fig7 #####
+        fig7 = px.scatter(df, x=xcol, y=ycol, color=color_on2, title=ycol+"   versus   "+xcol, color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data,trendline='ols')
+        # Adjust the chart's height using update_layout
+        fig7.update_layout( height=chart_height )  # Set your desired height here
+        st.plotly_chart(fig7, use_container_width=True, key="T4C1R1")
 
-with tab5:                                                                          ## TAB 5  Seaborn ##
-    ###################################### Seaborn Statistical Plots ##########################################################################
+with tab5:                                                                          ## TAB 5  Seaborn ####################
+    ###################################### Seaborn Statistical Plots ###################################
     df['Smash_Factor'] = pd.to_numeric(df['Smash_Factor'], errors='coerce')
     df['Carry_yds'] = pd.to_numeric(df['Carry_yds'], errors='coerce')
 
@@ -735,8 +764,12 @@ with tab10:                                                                     
         selected_ids = [pt['pointIndex'] for pt in selected_points if 'pointIndex' in pt]
         if selected_ids:
             filtered_df = df.iloc[selected_ids]
-            st.dataframe(filtered_df)
+            st.dataframe(filtered_df,column_order=col_display)
         else:
             st.write("No valid points selected.")
     else:
         st.write("Select points on the chart to view their details.")
+# Columns Available: ['Mombo_ShotID', 'Club', 'Time', 'Golfer', 'Shot', 'Video', 'Ball mph','Club mph', 'Smash_Factor', 'Carry yds', 'Total yds', 'Roll yds',
+#       'Swing H', 'Spin rpm', 'Height ft', 'Time s', 'AOA', 'Spin Loft','Swing V', 'Spin Axis', 'Lateral yds', 'Shot Type', 'FTP', 'FTT',
+#       'Dynamic Loft', 'Club Path', 'Launch H', 'Launch V', 'Low Point ftin','DescentV', 'Curve Dist yds', 'Lateral Impact in', 'Vertical Impact in',
+#       'Mode', 'Location', 'Unnamed_35', 'Unnamed_36', 'Unnamed_37','Unnamed_38', 'Unnamed_39', 'Unnamed_40', 'Comment', 'User1', 'User2','Exclude', 'Session']
