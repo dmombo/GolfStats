@@ -506,11 +506,88 @@ def create_fig8(df, fig8_type='kde', background_image_path=None, image_scale=1.5
 
         g.figure.set_size_inches(6, 4)
         return g.figure
+import plotly.express as px
 
+def create_bar_chart(df, session, y_variable):
+    """
+    Creates a bar chart for a given session showing the selected y_variable,
+    ordered by Club and Shot sequence.
+
+    Parameters:
+    - df: DataFrame containing golf shot data
+    - session: Selected session to filter the data
+    - y_variable: The variable to plot (e.g., 'Total_yds', 'Carry_yds', 'Ball_mph')
+
+    Returns:
+    - A Plotly figure object
+    """
+
+    # Filter data for the selected session
+    df_session = df[df['Session'] == session].copy()
+
+    if df_session.empty:
+        st.error(f"No data available for session: {session}")
+        return None
+
+    # Ensure club order is maintained
+    df_session['Club'] = pd.Categorical(df_session['Club'], categories=clubs, ordered=True)
+
+    # Sort by Club and then by Shot sequence
+    df_session = df_session.sort_values(['Club', 'Shot'])
+
+        # Define columns to show in hover tooltip
+    hover_columns = ['Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
+                     'Dynamic_Loft', 'Club_Path', 'Launch_V', 'Low_Point_ftin',
+                     'Lateral_Impact_in', 'Vertical_Impact_in']
+
+    # Create bar chart
+    fig = px.bar(df_session, x='Shot', y=y_variable, title=f"{y_variable} for {session}",
+                 color='Club', text=y_variable, height=500, facet_col='Club', facet_col_wrap=4,
+                 hover_data=hover_columns)
+
+    # Format bars
+    fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+
+    # Improve layout
+    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=False)
+
+    return fig
+
+# Function for the fixed reference bar chart
+def create_fixed_bar_chart(df, session, reference_variable="Total_yds"):
+    """
+    Creates a bar chart for Total Yds or Carry Yds for a given session,
+    always displayed beneath the user-selected variable chart.
+    """
+
+    df_session = df[df['Session'] == session].copy()
+
+    if df_session.empty:
+        return None
+
+    df_session['Club'] = pd.Categorical(df_session['Club'], categories=clubs, ordered=True)
+    df_session = df_session.sort_values(['Club', 'Shot'])
+
+    fig = px.bar(
+        df_session, 
+        x='Shot', 
+        y=reference_variable, 
+        title=f"{reference_variable} for {session}",
+        color='Club', 
+        text=reference_variable, 
+        height=400,  
+        facet_col='Club', 
+        facet_col_wrap=4
+    )
+
+    fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
+    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=reference_variable, showlegend=False)
+
+    return fig
 
 #######################################################################################################################
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9,tab10 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact","All Plots","Selected Data"])
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8,tab9,tab10,tab11 = st.tabs(["4 Plots", "BoxPlots","Stats","Plotchoice","Seaborn","Parameters","Distances","Impact","All Plots","Selected Data","Shots in Order"])
 
 with tab1:                                                                          ## TAB 1 4 Plots  ##
     row1_col1, row1_col2 = st.columns(2)
@@ -787,3 +864,19 @@ with tab10:                                                                     
 #       'Swing H', 'Spin rpm', 'Height ft', 'Time s', 'AOA', 'Spin Loft','Swing V', 'Spin Axis', 'Lateral yds', 'Shot Type', 'FTP', 'FTT',
 #       'Dynamic Loft', 'Club Path', 'Launch H', 'Launch V', 'Low Point ftin','DescentV', 'Curve Dist yds', 'Lateral Impact in', 'Vertical Impact in',
 #       'Mode', 'Location', 'Unnamed_35', 'Unnamed_36', 'Unnamed_37','Unnamed_38', 'Unnamed_39', 'Unnamed_40', 'Comment', 'User1', 'User2','Exclude', 'Session']
+
+with tab11:
+    st.write("### Session Bar Chart")
+
+    session_choice = st.selectbox("Select Session", df["Session"].unique())
+    y_variable_choice = st.selectbox("Select Variable", numcols, index=4)
+
+    fig_bar = create_bar_chart(df, session_choice, y_variable_choice)
+
+    if fig_bar:
+        st.plotly_chart(fig_bar, use_container_width=True)   
+        # Generate the fixed "Total Yds" or "Carry Yds" chart (bottom)
+        
+    fig_ref = create_fixed_bar_chart(df, session_choice, reference_variable="Total_yds")  
+    if fig_ref:
+        st.plotly_chart(fig_ref, use_container_width=True)
