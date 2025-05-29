@@ -122,6 +122,24 @@ selected_golfer = st.sidebar.selectbox("Select Golfer", golfer_list, index=defau
 sessions = df[df['Golfer'] == selected_golfer]['Session'].dropna().unique()
 selected_session = st.sidebar.selectbox("Select Session", sorted(sessions))
 
+# Ensure data is valid
+debug_mode = st.sidebar.checkbox("🔍 Debug Mode")
+# Example: filtering
+filtered_df = df[
+    (df['Golfer'] == selected_golfer) &
+    #(df['Club'] == selected_club) &
+    (df['Time'].dt.strftime("%Y %b %d %I:%M %p") == selected_session)
+]
+
+if debug_mode:
+    st.subheader("🔍 Debug Info")
+    st.write("Selected Golfer:", selected_golfer)
+   # st.write("Selected Club:", selected_club)
+    st.write("Selected Session:", selected_session)
+    st.write("Filtered rows:", len(filtered_df))
+    st.dataframe(filtered_df)
+
+
 # Filtered dataframe
 filtered_df = df[(df['Golfer'] == selected_golfer) & (df['Session'] == selected_session)]
 
