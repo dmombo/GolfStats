@@ -316,6 +316,11 @@ tab1, tab2, tab3 = st.tabs(["Dispersion", "Session Bars", "XY Plots"])
 with tab1:
     row1_col1, row1_col2 = st.columns(2)
     with row1_col1:
+        st.write("🔧 Plotly test chart:")
+        test_df = pd.DataFrame({"x": [1, 2, 3], "y": [10, 20, 30]})
+        test_fig = px.line(test_df, x="x", y="y", title="Test Line Chart")
+        st.plotly_chart(test_fig)
+        
         st.plotly_chart(create_fig1(filtered_df, "Carry_yds"), use_container_width=True, key="T1C1R1")
 
 # Tab 2 – Session Bar Charts
