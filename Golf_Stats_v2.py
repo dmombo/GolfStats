@@ -1,4 +1,5 @@
 import pandas as pd
+from pandas.api.types import CategoricalDtype
 import streamlit as st
 from streamlit_plotly_events import plotly_events  # Ensure this is installed: pip install streamlit-plotly-events
 import plotly.express as px
@@ -22,7 +23,7 @@ sns.set_theme(style="darkgrid")
 st.set_page_config(layout="wide")
 
 # TO RUN THIS, USE TERMINAL
-# streamlit run C:\Users\dmomb\OneDrive\Python\Projects\GolfDec24\Golf_Stats_v2.py
+#                        streamlit run C:\Users\dmomb\OneDrive\Python\Projects\GolfDec24\Golf_Stats_v2.py
 # Turn on 'Always re-run' option on your app (in the web browser), then every time you save code changes, they'll automatically show in the app
 
 # File and folder path
@@ -101,6 +102,15 @@ def clean_column_names(df):
         .str.strip()
         .str.replace(' ', '_')
     )
+# Add Smash_Factor_catgeory column
+bins = [0, 1.0, 1.1, 1.2, 1.3, 1.4, float('inf')]  # Define the bins
+labels = ['<1.0', '1.0–1.1', '1.1–1.2', '1.2–1.3', '1.3–1.4', '>1.4']
+# Create the categorical variable
+df['Smash_Factor_Category'] = pd.cut(df['Smash_Factor'], bins=bins, labels=labels, right=False)
+# Define ordered categories
+sf_cat_type = CategoricalDtype(categories=['<1.0', '1.0–1.1', '1.1–1.2', '1.2–1.3', '1.3–1.4', '>1.4'],ordered=True)
+# Assign the categorical type to the column
+df['Smash_Factor_Category'] = df['Smash_Factor_Category'].astype(sf_cat_type)
 
 # Main processing function
 def process_df(df,numcols=numcols):
@@ -276,7 +286,7 @@ st.sidebar.markdown("<hr style='border: 1px solid #333333;'>", unsafe_allow_html
 st.sidebar.markdown("<br>", unsafe_allow_html=True)
 
 # Choose what to color on 
-choices = ['Time', 'Golfer', 'Club', 'Shot_Type']
+choices = ['Time', 'Golfer', 'Club', 'Shot_Type','Smash_Factor_Category']
 color_on = st.sidebar.selectbox('Select ColorOn', choices)
 ########### df is now the filtered data on the code below   #######################################################################
 
@@ -536,7 +546,7 @@ def create_bar_chart(df, session, y_variable):
     df_session = df_session.sort_values(['Club', 'Shot'])
 
         # Define columns to show in hover tooltip
-    hover_columns = ['Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
+    hover_columns = ['Shot_Type','Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
                      'Dynamic_Loft', 'Club_Path', 'Launch_V', 'Low_Point_ftin',
                      'Lateral_Impact_in', 'Vertical_Impact_in']
 
@@ -549,7 +559,7 @@ def create_bar_chart(df, session, y_variable):
     fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
 
     # Improve layout
-    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=False)
+    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=True)
 
     return fig
 
@@ -567,23 +577,162 @@ def create_fixed_bar_chart(df, session, reference_variable="Total_yds"):
 
     df_session['Club'] = pd.Categorical(df_session['Club'], categories=clubs, ordered=True)
     df_session = df_session.sort_values(['Club', 'Shot'])
+    # Ensure Smash_Factor_Category has all categories
+    all_cats = df['Smash_Factor_Category'].cat.categories
+    present_cats = df_session['Smash_Factor_Category'].dropna().unique()
+    # Add dummy rows for missing categories ##################
+    missing_cats = [cat for cat in all_cats if cat not in present_cats] 
+    dummy_rows = pd.DataFrame({
+    'Shot': [np.nan] * len(missing_cats),
+    'Club': [df_session['Club'].iloc[0]] * len(missing_cats),  # Assign an existing Club just to avoid error
+    'Session': [session] * len(missing_cats),
+    'Smash_Factor_Category': pd.Categorical(missing_cats, categories=all_cats, ordered=True),
+    'Total_yds': [np.nan] * len(missing_cats)  # Or whatever reference_variable is
+    })
+    # Append and reset
+    df_session = pd.concat([df_session, dummy_rows], ignore_index=True)
+    ###########################################################
+    df_session['Smash_Factor_Category'] = df_session['Smash_Factor_Category'].cat.set_categories(all_cats)
 
+    # Explicit color mapping for Smash_Factor_Category with red as highest
+    color_discrete_map = {
+        '<1.0': 'indigo',
+        '1.0–1.1': 'blue',
+        '1.1–1.2': 'green',
+        '1.2–1.3': 'yellow',
+        '1.3–1.4': 'orange',
+        '>1.4': 'red'
+    }
+    
     fig = px.bar(
         df_session, 
         x='Shot', 
         y=reference_variable, 
         title=f"{reference_variable} for {session}",
-        color='Club', 
+        color='Smash_Factor_Category', 
         text=reference_variable, 
         height=400,  
         facet_col='Club', 
-        facet_col_wrap=4
+        facet_col_wrap=4,
+        color_discrete_map=color_discrete_map
     )
 
     fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=reference_variable, showlegend=False)
+    fig.update_layout(
+        xaxis_title="Shot Sequence",
+        yaxis_title=reference_variable,
+        showlegend=True,
+        legend_title_text='',  # Remove legend title
+        margin=dict(t=60, b=40, l=20, r=20)
+    )
+
+    # Clean facet labels (e.g., remove "Club=")
+    fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
 
     return fig
+
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+
+def make_stacked_bar_charts(
+    df, session, xvar, yvar_list, yvar_fixed,
+    facet_col='Club', facet_color=None, fixed_color=None,
+    category_order=None, color_map=None
+):
+    df_session = df[df['Session'] == session].copy()
+
+    if df_session.empty:
+        return None
+
+    # Ensure consistent facet column ordering
+    if category_order:
+        df_session[facet_col] = pd.Categorical(df_session[facet_col], categories=category_order, ordered=True)
+    df_session = df_session.sort_values([facet_col, xvar])
+
+    num_rows = len(yvar_list) + 1  # Each yvar gets a row + 1 for fixed
+    clubs = df_session[facet_col].unique()
+
+    fig = make_subplots(
+        rows=num_rows,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.05,
+        subplot_titles=yvar_list + [yvar_fixed]
+    )
+
+    for i, yvar in enumerate(yvar_list, start=1):
+        for club in clubs:
+            club_df = df_session[df_session[facet_col] == club]
+            fig.add_trace(
+                go.Bar(
+                    x=club_df[xvar],
+                    y=club_df[yvar],
+                    name=str(club),
+                    marker_color=color_map.get(club) if color_map else None,
+                    showlegend=(i == 1)
+                ),
+                row=i,
+                col=1
+            )
+
+    # Add the fixed reference variable
+    for cat in df_session[facet_col].unique():
+        club_df = df_session[df_session[facet_col] == cat]
+        fig.add_trace(
+            go.Bar(
+                x=club_df[xvar],
+                y=club_df[yvar_fixed],
+                name=str(cat),
+                marker_color=fixed_color.get(club_df['Smash_Factor_Category'].iloc[0]) if fixed_color else None,
+                showlegend=False
+            ),
+            row=num_rows,
+            col=1
+        )
+
+    fig.update_layout(
+        height=300 * num_rows,
+        barmode='group',
+        showlegend=True,
+        title_text=f"Session Comparison for {session}",
+        margin=dict(t=60, b=40)
+    )
+
+    return fig
+
+# Helper to write a plotly figure to an in-memory PNG image
+def fig_to_png_bytes(fig):
+    buf = BytesIO()
+    fig.write_image(buf, format="png")
+    buf.seek(0)
+    return buf
+
+# PDF generation function
+
+def generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    figs = [
+        (fig_bar, "Bar Chart"),
+        (fig_hist, "Histogram"),
+        (fig_ref, "Reference Chart"),
+        (fig_xy, "XY Plot")
+    ]
+
+    for fig, title in figs:
+        if fig:
+            image_stream = fig_to_png_bytes(fig)
+            temp_path = f"temp_{title.replace(' ', '_')}.png"
+            with open(temp_path, "wb") as f:
+                f.write(image_stream.read())
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(0, 10, title, ln=True)
+            pdf.image(temp_path, x=10, y=20, w=190)
+            os.remove(temp_path)
+
+    pdf.output("golf_report.pdf")
 
 #######################################################################################################################
 
@@ -629,7 +778,17 @@ with tab2:                                                                      
 
             st.write("Box Plot for "+boxplot_metric)
             st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
+    # Button to trigger report generation
 
+    st.markdown("---")
+    if st.button("Generate PDF Report"):
+        try:
+            generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist)
+            with open("golf_report.pdf", "rb") as f:
+                st.download_button("Download PDF Report", f.read(), file_name="golf_report.pdf", mime="application/pdf")
+        except Exception as e:
+            st.error(f"Error generating report: {e}")
+            
 with tab3:                                                                          ## TAB 3 Stats #####################
     col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:
@@ -875,8 +1034,34 @@ with tab11:
 
     if fig_bar:
         st.plotly_chart(fig_bar, use_container_width=True)   
-        # Generate the fixed "Total Yds" or "Carry Yds" chart (bottom)
-        
+  
+    st.markdown("---")  # Horizontal rule
+
+    # Generate the fixed "Total Yds" or "Carry Yds" chart (bottom
     fig_ref = create_fixed_bar_chart(df, session_choice, reference_variable="Total_yds")  
     if fig_ref:
         st.plotly_chart(fig_ref, use_container_width=True)
+
+    fig = make_stacked_bar_charts(
+    df,
+    session='2025 May 10 03:11 PM',
+    xvar='Shot',
+    yvar_list=['AOA'],
+    yvar_fixed='Total_yds',
+    facet_col='Club',
+    category_order=clubs,
+    color_map={
+        '8 Iron': 'red',
+        'Pitching Wedge': 'orange'
+    },
+    fixed_color={
+        '<1.0': 'indigo',
+        '1.0–1.1': 'blue',
+        '1.1–1.2': 'green',
+        '1.2–1.3': 'yellow',
+        '1.3–1.4': 'orange',
+        '>1.4': 'red'
+    }
+)
+
+    st.plotly_chart(fig, use_container_width=True)

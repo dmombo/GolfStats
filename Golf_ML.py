@@ -28,7 +28,7 @@ df = pd.read_excel(fol+fn)
 # Normalize column names:
 df.columns = df.columns.str.strip()  # remove leading/trailing whitespace
 df.columns = df.columns.str.replace('\xa0', ' ')  # replace non-breaking spaces with normal spaces
-
+print(df.columns)
 # List of columns that should be numeric.
 numeric_cols = [
     "Ball (mph)", "Club (mph)", "Smash Factor", "Carry (yds)",
@@ -50,7 +50,7 @@ df.head().to_excel("df_head.xlsx", index=False)
 # --- 2. Create Dummy Variables for Categorical Features ---
 
 # List of categorical columns that you may wish to include.
-categorical_cols = ["Club", "Golfer", "Shot Type", "Mode", "Location"]
+categorical_cols = ["Club", "Golfer", "Shot_Type", "Mode", "Location"]
 for col in categorical_cols:
     if col in df.columns:
         df[col] = df[col].astype('category')
@@ -64,8 +64,8 @@ df = pd.get_dummies(df, columns=categorical_cols, drop_first=True)
 # We drop columns that are identifiers or the target itself.
 # Adjust the list of dropped columns as appropriate.
 drop_cols = ["Mombo ShotID", "Time", "Shot", "Video"]  # and any other columns not used for prediction
-X = df.drop(columns=drop_cols + ["Carry (yds)"], errors='ignore')
-y = df["Carry (yds)"]
+X = df.drop(columns=drop_cols + ["Carry_yds"], errors='ignore')
+y = df["Carry_yds"]
 
 print("Features used in the model:")
 print(X.columns)
@@ -79,7 +79,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 # --- 5. Model Training using XGBoost ---
 
 # Instantiate the XGBoost regressor.
-model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
+model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42,enable_categorical=True)
 
 # Fit the model on training data.
 model.fit(X_train, y_train)
