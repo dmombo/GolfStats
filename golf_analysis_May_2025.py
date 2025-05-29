@@ -83,7 +83,7 @@ def process_df(df, numcols=NUMERIC_COLS):
         st.error("Missing 'Time' column.")
         return df, None, None
 
-    df['Time'] = pd.to_datetime(df['Time'], format="%Y%m%d  %I:%M:%S %p", errors='coerce')
+    df['Time'] = pd.to_datetime(df['Time'], format="%Y%m%d  %I:%M:%S %p", errors='raise')  #  vs 'coerce
 
     df.dropna(subset=['Time'], inplace=True)
     df.sort_values('Time', inplace=True)
