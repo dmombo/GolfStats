@@ -112,41 +112,6 @@ def process_df(df, numcols=NUMERIC_COLS):
 
     return df, df_sessions, df_golfer
 
-# Run processing
-df, df_sessions, df_golfer = process_df(df)
-
-# Sidebar filters
-golfer_list = sorted(df['Golfer'].dropna().unique())
-default_index = golfer_list.index("Dave") if "Dave" in golfer_list else 0
-selected_golfer = st.sidebar.selectbox("Select Golfer", golfer_list, index=default_index)
-sessions = df[df['Golfer'] == selected_golfer]['Session'].dropna().unique()
-selected_session = st.sidebar.selectbox("Select Session", sorted(sessions))
-
-# Ensure data is valid
-debug_mode = st.sidebar.checkbox("🔍 Debug Mode")
-# Example: filtering
-filtered_df = df[
-    (df['Golfer'] == selected_golfer) &
-    #(df['Club'] == selected_club) &
-    (df['Time'].dt.strftime("%Y %b %d %I:%M %p") == selected_session)
-]
-
-if debug_mode:
-    st.subheader("🔍 Debug Info")
-    st.write("Selected Golfer:", selected_golfer)
-   # st.write("Selected Club:", selected_club)
-    st.write("Selected Session:", selected_session)
-    st.write("Filtered rows:", len(filtered_df))
-    st.dataframe(filtered_df)
-
-
-# Filtered dataframe
-filtered_df = df[(df['Golfer'] == selected_golfer) & (df['Session'] == selected_session)]
-
-# Supporting data for plotting
-color_on = 'Club'
-hov_data = ['Time', 'Shot_Type', 'Club', 'Carry_yds', 'Lateral_yds']
-
 # Confidence ellipse radius calculator
 def calculate_confidence_radius(percent):
     return chi2.ppf(percent/100, df=2)
@@ -200,46 +165,56 @@ def create_fig1(df, x_choice):
 
 # Bar chart generator
 
-def create_bar_chart(df, session, y_variable,club):
-    df_session = df[(df['Session'] == session) & (df['Club'] == club)].copy()
+def create_bar_chart(df, sessions, y_variable, club):
+    if isinstance(sessions, str):
+        sessions = [sessions]  # ensure it's a list
+
+    df_session = df[(df['Session'].isin(sessions)) & (df['Club'] == club)].copy()
     if df_session.empty:
-        st.error(f"No data available for session: {session}")
+        st.error(f"No data available for selected session(s): {sessions}")
         return None
 
     df_session['Club'] = pd.Categorical(df_session['Club'], categories=CLUB_ORDER, ordered=True)
-    df_session = df_session.sort_values(['Club', 'Shot'])
+    df_session = df_session.sort_values(['Session', 'Shot'])  # include Session for multi sorting
 
-    hover_columns = ['Shot_Type','Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
+    hover_columns = ['Shot_Type', 'Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
                      'Dynamic_Loft', 'Club_Path', 'Launch_V', 'Low_Point_ftin',
                      'Lateral_Impact_in', 'Vertical_Impact_in']
 
-    fig = px.bar(df_session, x='Shot', y=y_variable, title=f"{y_variable} for {session}",
-                 color='Club', text=y_variable, height=500,hover_data=hover_columns)
+    title = f"{y_variable} for Session(s): {', '.join(sessions)}"
+    fig = px.bar(df_session, x='Session_Shot', y=y_variable, color='Club',
+                 text=y_variable, height=500, title=title, hover_data=hover_columns)
 
     fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
     fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=True)
     return fig
 
+
 # Reference chart below main bar chart
 
-def create_fixed_bar_chart(df, session, reference_variable="Total_yds",club=None):
-    df_session = df[(df['Session'] == session) & (df['Club'] == club)].copy()
+def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=None):
+    if isinstance(sessions, str):
+        sessions = [sessions]
+
+    df_session = df[(df['Session'].isin(sessions)) & (df['Club'] == club)].copy()
     if df_session.empty:
         return None
 
     df_session['Club'] = pd.Categorical(df_session['Club'], categories=CLUB_ORDER, ordered=True)
-    df_session = df_session.sort_values(['Club', 'Shot'])
+    df_session = df_session.sort_values(['Session', 'Shot'])
 
     all_cats = df['Smash_Factor_Category'].cat.categories
     present_cats = df_session['Smash_Factor_Category'].dropna().unique()
     missing_cats = [cat for cat in all_cats if cat not in present_cats]
+
     dummy_rows = pd.DataFrame({
         'Shot': [np.nan] * len(missing_cats),
         'Club': [df_session['Club'].iloc[0]] * len(missing_cats),
-        'Session': [session] * len(missing_cats),
+        'Session': [sessions[0]] * len(missing_cats),  # pick one session arbitrarily for dummies
         'Smash_Factor_Category': pd.Categorical(missing_cats, categories=all_cats, ordered=True),
-        'Total_yds': [np.nan] * len(missing_cats)
+        reference_variable: [np.nan] * len(missing_cats)
     })
+
     df_session = pd.concat([df_session, dummy_rows], ignore_index=True)
     df_session['Smash_Factor_Category'] = df_session['Smash_Factor_Category'].cat.set_categories(all_cats)
 
@@ -252,16 +227,15 @@ def create_fixed_bar_chart(df, session, reference_variable="Total_yds",club=None
         '>1.4': 'red'
     }
 
+    title = f"{reference_variable} for Session(s): {', '.join(sessions)}"
     fig = px.bar(
         df_session,
-        x='Shot',
+        x='Session_Shot',
         y=reference_variable,
-        title=f"{reference_variable} for {session}",
         color='Smash_Factor_Category',
         text=reference_variable,
         height=400,
-        facet_col=None,
-        facet_col_wrap=4,
+        title=title,
         color_discrete_map=color_discrete_map
     )
 
@@ -309,6 +283,51 @@ def generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist):
             os.remove(temp_path)
 
     pdf.output("golf_report.pdf")
+##############---------------------------------------------------------------------################################################
+# Run processing
+df, df_sessions, df_golfer = process_df(df)
+
+# Sidebar filters
+golfer_list = sorted(df['Golfer'].dropna().unique())
+default_index = golfer_list.index("Dave") if "Dave" in golfer_list else 0
+selected_golfer = st.sidebar.selectbox("Select Golfer", golfer_list, index=default_index)
+
+sessions = sorted(df[df['Golfer'] == selected_golfer]['Session'].dropna().unique())
+
+multi_select = st.sidebar.checkbox("Select multiple sessions")
+
+if multi_select:
+    selected_sessions = st.sidebar.multiselect("Select Sessions", sessions, default=sessions[:1])
+else:
+    selected_session = st.sidebar.selectbox("Select Session", sessions)
+    selected_sessions = [selected_session]  # wrap in list for consistent filtering
+
+# Filtered dataframe
+filtered_df = df[
+    (df['Golfer'] == selected_golfer) &
+    (df['Session'].isin(selected_sessions))].copy()
+
+# 🔹 Add combined label for plotting
+# Format session date as 'Mon DD' (e.g. 'May 25')
+filtered_df['Session_Shot'] = (  pd.to_datetime(filtered_df['Session']).dt.strftime('%b %d %I:%M') +
+                                " | " + filtered_df['Shot'].astype(str))
+
+
+# Ensure data is valid
+debug_mode = st.sidebar.checkbox("🔍 Debug Mode")
+
+if debug_mode:
+    st.subheader("🔍 Debug Info")
+    st.write("Selected Golfer:", selected_golfer)
+    st.write("Selected Sessions:", selected_sessions)
+    st.write("Filtered rows:", len(filtered_df))
+    st.dataframe(filtered_df)
+
+# Supporting data for plotting
+color_on = 'Club'
+hov_data = ['Time', 'Shot_Type', 'Club', 'Carry_yds', 'Lateral_yds']
+
+
 
 # Tab layout
 tab1, tab2, tab3 = st.tabs(["Dispersion", "Session Bars", "XY Plots"])
@@ -331,7 +350,7 @@ with tab2:
 
     with row1_col1:
         y_variable_choice = st.selectbox("Select Variable", NUMERIC_COLS, index=4)
-        fig_bar = create_bar_chart(df_club, selected_session, y_variable_choice,selected_club)
+        fig_bar = create_bar_chart(df_club, selected_sessions, y_variable_choice,selected_club)
         if fig_bar:
             st.plotly_chart(fig_bar, use_container_width=True)
 
@@ -349,7 +368,7 @@ with tab2:
 
     with row2_col1:
         ref_choice = st.selectbox("Reference Chart Variable", ["Total_yds", "Carry_yds"], index=0)
-        fig_ref = create_fixed_bar_chart(df_club, selected_session, reference_variable=ref_choice,club=selected_club)
+        fig_ref = create_fixed_bar_chart(df_club, selected_sessions, reference_variable=ref_choice,club=selected_club)
         if fig_ref:
             st.plotly_chart(fig_ref, use_container_width=True)
 
