@@ -86,7 +86,11 @@ def cap_outliers_iqr(data, column):
         np.where(
             data[column] < lower_limit,
             lower_limit,
-            data[column]))
+            data[column]
+        )
+    )
+
+    return data
 
 def remove_outliers_zScore(data, column):
     """
