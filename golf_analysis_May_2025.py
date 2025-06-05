@@ -24,6 +24,18 @@ FILENAME = 'FS_Golf_DB.xlsx'
 # Load data with caching
 @st.cache_data
 def load_data(filepath):
+    """Read the main Excel data file.
+
+    Parameters
+    ----------
+    filepath : str
+        Location of the Excel workbook.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Loaded dataset.
+    """
     return pd.read_excel(filepath, engine='openpyxl')
 
 df = load_data(DATA_FOLDER + FILENAME)
@@ -43,6 +55,15 @@ CLUB_ORDER = [
 
 # Cleaning and conversion functions
 def ensure_numeric(df, columns):
+    """Convert listed columns to numeric values in-place.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        DataFrame to modify.
+    columns : Iterable[str]
+        Names of columns expected to be numeric.
+    """
     for col in columns:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce')
@@ -50,6 +71,19 @@ def ensure_numeric(df, columns):
             st.error(f"Missing numeric column: {col}")
 
 def convert_directional_value(val):
+    """Parse a value with an L/R suffix into a signed float.
+
+    Parameters
+    ----------
+    val : Any
+        Raw value from the dataset.
+
+    Returns
+    -------
+    float | None
+        Signed numeric value where ``L`` is positive and ``R`` is negative,
+        or ``None`` when parsing fails.
+    """
     try:
         val = str(val).strip()
         val = val.replace("\xa0", "").replace("\u200b", "").replace(" ", "")
@@ -61,6 +95,7 @@ def convert_directional_value(val):
         return None
 
 def convert_directional_columns(df, columns):
+    """Apply ``convert_directional_value`` to multiple columns."""
     for col in columns:
         if col in df.columns:
             df[col] = df[col].apply(convert_directional_value)
@@ -69,6 +104,7 @@ def convert_directional_columns(df, columns):
     return df
 
 def clean_column_names(df):
+    """Standardize DataFrame column labels."""
     df.columns = (df.columns
                   .str.replace(r'[^\w\s]', '', regex=True)
                   .str.replace('\xa0', ' ')
@@ -77,6 +113,20 @@ def clean_column_names(df):
 
 # Process and enrich DataFrame
 def process_df(df, numcols=NUMERIC_COLS):
+    """Clean and enrich the raw data frame.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Raw dataset from the Excel file.
+    numcols : list[str], optional
+        Columns to coerce to numeric.
+
+    Returns
+    -------
+    tuple[pandas.DataFrame, pandas.DataFrame, pandas.DataFrame]
+        Cleaned DataFrame plus pivot tables by session and golfer.
+    """
     clean_column_names(df)
 
     if 'Time' not in df.columns:
@@ -114,10 +164,12 @@ def process_df(df, numcols=NUMERIC_COLS):
 
 # Confidence ellipse radius calculator
 def calculate_confidence_radius(percent):
+    """Return chi-square radius for a 2D confidence ellipse."""
     return chi2.ppf(percent/100, df=2)
 
 # Scatter plot with confidence ellipse
 def create_fig1(df, x_choice):
+    """Scatter plot of lateral dispersion with confidence ellipses."""
     x_max = df[x_choice].max() * 1.25
     max_abs_y = max(abs(df["Lateral_yds"].min()), abs(df["Lateral_yds"].max()))
     scale_fac = 1.5
@@ -166,6 +218,7 @@ def create_fig1(df, x_choice):
 # Bar chart generator
 
 def create_bar_chart(df, sessions, y_variable, club):
+    """Build a bar chart of shot metrics for a club and sessions."""
     if isinstance(sessions, str):
         sessions = [sessions]  # ensure it's a list
 
@@ -193,6 +246,7 @@ def create_bar_chart(df, sessions, y_variable, club):
 # Reference chart below main bar chart
 
 def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=None):
+    """Reference bar chart colored by smash factor category."""
     if isinstance(sessions, str):
         sessions = [sessions]
 
@@ -252,6 +306,7 @@ def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=No
 
 # Helper to write a plotly figure to an in-memory PNG image
 def fig_to_png_bytes(fig,scale=3):  # Increase scale for higher resolution
+    """Return a ``BytesIO`` object containing a PNG of the figure."""
     buf = BytesIO()
     fig.write_image(buf, format="png", scale = scale)
     buf.seek(0)
@@ -260,6 +315,7 @@ def fig_to_png_bytes(fig,scale=3):  # Increase scale for higher resolution
 # PDF generation function
 
 def generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist):
+    """Create ``golf_report.pdf`` composed of the provided figures."""
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
 
@@ -392,6 +448,7 @@ with tab2:
 
 # List of XY pairs for plotting
 def get_xy_pairs():
+    """Return default x/y variable combinations for Tab 3 plots."""
     return [
         ("Smash_Factor", "Carry_yds"),
         ("Club_Path", "Launch_H"),
@@ -407,6 +464,7 @@ def get_xy_pairs():
 # Generate individual scatter plot
 
 def create_xy_plot(df, x_var, y_var):
+    """Create a single scatter plot for two variables."""
     fig = px.scatter(df, x=x_var, y=y_var, color='Club',
                      title=f"{y_var} vs {x_var}",
                      height=300,
