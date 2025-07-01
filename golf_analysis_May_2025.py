@@ -268,8 +268,19 @@ def create_bar_chart(df, sessions, y_variable, club):
     
     # Ensure Session_Shot is created for proper x-axis ordering
     if 'Session_Shot' not in df_session.columns:
-        df_session['Session_Shot'] = (pd.to_datetime(df_session['Session']).dt.strftime('%b %d %I:%M') +
-                                     " | " + df_session['Shot'].astype(str))  # include Session for multi sorting
+        # Use the Time column if available, otherwise fall back to Session parsing
+        if 'Time' in df_session.columns:
+            df_session['Session_Shot'] = (df_session['Time'].dt.strftime('%b %d %I:%M') +
+                                         " | " + df_session['Shot'].astype(str))
+        else:
+            # Fallback: try to parse Session string back to datetime
+            try:
+                df_session['Session_Shot'] = (pd.to_datetime(df_session['Session']).dt.strftime('%b %d %I:%M') +
+                                             " | " + df_session['Shot'].astype(str))
+            except:
+                # Last resort: use Session as-is
+                df_session['Session_Shot'] = (df_session['Session'].astype(str) + 
+                                             " | " + df_session['Shot'].astype(str))  # include Session for multi sorting
 
     hover_columns = ['Shot_Type', 'Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
                      'Dynamic_Loft', 'Club_Path', 'Launch_V', 'Low_Point_ftin',
@@ -423,8 +434,8 @@ filtered_df = df[
     (df['Session'].isin(selected_sessions))].copy()
 
 # 🔹 Add combined label for plotting
-# Format session date as 'Mon DD' (e.g. 'May 25')
-filtered_df['Session_Shot'] = (  pd.to_datetime(filtered_df['Session']).dt.strftime('%b %d %I:%M') +
+# Format session date as 'Mon DD' (e.g. 'May 25') using the original Time column
+filtered_df['Session_Shot'] = (filtered_df['Time'].dt.strftime('%b %d %I:%M') +
                                 " | " + filtered_df['Shot'].astype(str))
 
 
