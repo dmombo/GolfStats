@@ -315,11 +315,19 @@ def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=No
         })
         df_session = pd.concat([df_session, dummy_rows], ignore_index=True)
     
-    df_session['Smash_Factor_Category'] = df_session['Smash_Factor_Category'].cat.set_categories(all_cats)
+    # Ensure the categorical column uses the correct categories
+    df_session['Smash_Factor_Category'] = pd.Categorical(
+        df_session['Smash_Factor_Category'], 
+        categories=all_cats, 
+        ordered=True
+    )
     
     # Re-sort by shot sequence after adding dummy rows, but filter out empty Session_Shot for plotting
     df_session = df_session.sort_values(['Session', 'Shot'])
     df_plot = df_session[df_session['Session_Shot'] != ''].copy()  # Remove dummy rows from actual plotting
+    
+    # Convert categorical to string to avoid grouping issues in Streamlit Cloud
+    df_plot['Smash_Factor_Category'] = df_plot['Smash_Factor_Category'].astype(str)
 
     color_discrete_map = {
         '<1.0': 'red',
