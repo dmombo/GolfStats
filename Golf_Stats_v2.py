@@ -700,39 +700,7 @@ def make_stacked_bar_charts(
 
     return fig
 
-# Helper to write a plotly figure to an in-memory PNG image
-def fig_to_png_bytes(fig):
-    buf = BytesIO()
-    fig.write_image(buf, format="png")
-    buf.seek(0)
-    return buf
 
-# PDF generation function
-
-def generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-
-    figs = [
-        (fig_bar, "Bar Chart"),
-        (fig_hist, "Histogram"),
-        (fig_ref, "Reference Chart"),
-        (fig_xy, "XY Plot")
-    ]
-
-    for fig, title in figs:
-        if fig:
-            image_stream = fig_to_png_bytes(fig)
-            temp_path = f"temp_{title.replace(' ', '_')}.png"
-            with open(temp_path, "wb") as f:
-                f.write(image_stream.read())
-            pdf.add_page()
-            pdf.set_font("Arial", size=12)
-            pdf.cell(0, 10, title, ln=True)
-            pdf.image(temp_path, x=10, y=20, w=190)
-            os.remove(temp_path)
-
-    pdf.output("golf_report.pdf")
 
 #######################################################################################################################
 
@@ -778,17 +746,8 @@ with tab2:                                                                      
 
             st.write("Box Plot for "+boxplot_metric)
             st.plotly_chart(fig6, use_container_width=True, key="T2C3R3")
-    # Button to trigger report generation
 
-    st.markdown("---")
-    if st.button("Generate PDF Report"):
-        try:
-            generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist)
-            with open("golf_report.pdf", "rb") as f:
-                st.download_button("Download PDF Report", f.read(), file_name="golf_report.pdf", mime="application/pdf")
-        except Exception as e:
-            st.error(f"Error generating report: {e}")
-            
+
 with tab3:                                                                          ## TAB 3 Stats #####################
     col1_3, col2_3, col3_3 = st.columns(3)
     with col1_3:

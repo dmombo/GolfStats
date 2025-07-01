@@ -48,6 +48,10 @@ NUMERIC_COLS = [
     'Launch_V', 'Low_Point_ftin', 'DescentV', 'Curve_Dist_yds', 'Lateral_Impact_in', 'Vertical_Impact_in'
 ]
 
+CATEGORICAL_COLS = ['Shot_Type', 'Smash_Factor_Category', 'Launch_Category', 'Flight_Category']
+
+ALL_COLS = NUMERIC_COLS + CATEGORICAL_COLS
+
 CLUB_ORDER = [
     'Driver', '3 Wood', '5 Wood', '4 Iron', '5 Iron', '6 Iron', '7 Iron',
     '8 Iron', '9 Iron', 'Pitching Wedge', 'Gap Wedge', 'Sand Wedge', 'Lob Wedge'
@@ -133,7 +137,15 @@ def process_df(df, numcols=NUMERIC_COLS):
         st.error("Missing 'Time' column.")
         return df, None, None
 
-    df['Time'] = pd.to_datetime(df['Time'], format="%Y%m%d  %I:%M:%S %p", errors='raise')  #  vs 'coerce
+    # Parse datetime with robust error handling
+    try:
+        df['Time'] = pd.to_datetime(df['Time'], format="%Y%m%d  %I:%M:%S %p", errors='raise')
+    except ValueError as e:
+        st.error(f"Could not parse Time column with expected format. Error: {e}")
+        st.write("Sample Time values that failed to parse:")
+        st.write(df['Time'].head(10).tolist())
+        st.write("Please check your data entry format. Expected format: YYYYMMDD  HH:MM:SS AM/PM")
+        return df, None, None
 
     df.dropna(subset=['Time'], inplace=True)
     df.sort_values('Time', inplace=True)
@@ -143,6 +155,9 @@ def process_df(df, numcols=NUMERIC_COLS):
     df = convert_directional_columns(df, ['Swing_H', 'Spin_Axis', 'Lateral_yds', 'FTP', 'FTT', 'Club_Path', 'Launch_H'])
     ensure_numeric(df, numcols)
 
+    if 'Shot' in df.columns:
+        df['Shot'] = pd.to_numeric(df['Shot'], errors='coerce')
+        
     if 'Shot_Type' not in df.columns:
         st.error("Missing 'Shot_Type' column.")
     else:
@@ -153,6 +168,26 @@ def process_df(df, numcols=NUMERIC_COLS):
     labels = ['<1.0', '1.0–1.1', '1.1–1.2', '1.2–1.3', '1.3–1.4', '>1.4']
     cat_type = CategoricalDtype(categories=labels, ordered=True)
     df['Smash_Factor_Category'] = pd.cut(df['Smash_Factor'], bins=bins, labels=labels, right=False).astype(cat_type)
+
+    # Add Launch Category and Flight Category based on Shot_Type
+    launch_mapping = {
+        'Draw': 'Straight', 'Fade': 'Straight', 'Hook': 'Straight', 'Slice': 'Straight', 'Straight': 'Straight',
+        'Pull': 'Pull', 'Pull Straight': 'Pull', 'Pull/Draw': 'Pull', 'Pull Draw': 'Pull', 
+        'Pull/Fade': 'Pull', 'Pull Fade': 'Pull', 'Pull/Hook': 'Pull', 'Pull/Slice': 'Pull',
+        'Push': 'Push', 'Push Straight': 'Push', 'Push/Draw': 'Push', 'Push Draw': 'Push',
+        'Push/Fade': 'Push', 'Push Fade': 'Push', 'Push/Slice': 'Push'
+    }
+    
+    flight_mapping = {
+        'Draw': 'Draw', 'Fade': 'Fade', 'Hook': 'Draw', 'Slice': 'Fade', 'Straight': 'Straight',
+        'Pull': 'Straight', 'Pull Straight': 'Straight', 'Pull/Draw': 'Draw', 'Pull Draw': 'Draw',
+        'Pull/Fade': 'Fade', 'Pull Fade': 'Fade', 'Pull/Hook': 'Draw', 'Pull/Slice': 'Fade',
+        'Push': 'Straight', 'Push Straight': 'Straight', 'Push/Draw': 'Draw', 'Push Draw': 'Draw',
+        'Push/Fade': 'Fade', 'Push Fade': 'Fade', 'Push/Slice': 'Fade'
+    }
+    
+    df['Launch_Category'] = df['Shot_Type'].map(launch_mapping)
+    df['Flight_Category'] = df['Shot_Type'].map(flight_mapping)
 
     # Pivot by Golfer + Session and Golfer only
     df_sessions = df.pivot_table(index='Club', columns=['Golfer', 'Session'], values=numcols, aggfunc='mean', observed=True)
@@ -175,7 +210,8 @@ def create_fig1(df, x_choice):
     scale_fac = 1.5
     y_min, y_max = -max_abs_y * scale_fac, max_abs_y * scale_fac
 
-    fig1 = px.scatter(df, x=x_choice, y='Lateral_yds', color=color_on, title="Dispersion Field", color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data)
+    fig1 = px.scatter(df, x=x_choice, y='Lateral_yds', color=color_on, title="Dispersion Field", 
+                      color_discrete_sequence=px.colors.qualitative.Bold, hover_data=hov_data, height=600)
     fig1.update_xaxes(range=[0, x_max])
     fig1.update_yaxes(range=[y_min, y_max])
     fig1.update_layout(yaxis_scaleanchor="x")
@@ -228,7 +264,12 @@ def create_bar_chart(df, sessions, y_variable, club):
         return None
 
     df_session['Club'] = pd.Categorical(df_session['Club'], categories=CLUB_ORDER, ordered=True)
-    df_session = df_session.sort_values(['Session', 'Shot'])  # include Session for multi sorting
+    df_session = df_session.sort_values(['Session', 'Shot'])
+    
+    # Ensure Session_Shot is created for proper x-axis ordering
+    if 'Session_Shot' not in df_session.columns:
+        df_session['Session_Shot'] = (pd.to_datetime(df_session['Session']).dt.strftime('%b %d %I:%M') +
+                                     " | " + df_session['Shot'].astype(str))  # include Session for multi sorting
 
     hover_columns = ['Shot_Type', 'Club_mph', 'Smash_Factor', 'AOA', 'Spin_Loft', 'Swing_V', 'FTP',
                      'Dynamic_Loft', 'Club_Path', 'Launch_V', 'Low_Point_ftin',
@@ -239,7 +280,8 @@ def create_bar_chart(df, sessions, y_variable, club):
                  text=y_variable, height=500, title=title, hover_data=hover_columns)
 
     fig.update_traces(texttemplate='%{text:.1f}', textposition='outside')
-    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=True)
+    fig.update_layout(xaxis_title="Shot Sequence", yaxis_title=y_variable, showlegend=True,
+                      legend=dict(x=1.02, y=1, xanchor='left', yanchor='top'))
     return fig
 
 
@@ -261,29 +303,36 @@ def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=No
     present_cats = df_session['Smash_Factor_Category'].dropna().unique()
     missing_cats = [cat for cat in all_cats if cat not in present_cats]
 
-    dummy_rows = pd.DataFrame({
-        'Shot': [np.nan] * len(missing_cats),
-        'Club': [df_session['Club'].iloc[0]] * len(missing_cats),
-        'Session': [sessions[0]] * len(missing_cats),  # pick one session arbitrarily for dummies
-        'Smash_Factor_Category': pd.Categorical(missing_cats, categories=all_cats, ordered=True),
-        reference_variable: [np.nan] * len(missing_cats)
-    })
-
-    df_session = pd.concat([df_session, dummy_rows], ignore_index=True)
+    # Only add dummy rows if we actually need them for the legend, and filter them out from plotting
+    if missing_cats:
+        dummy_rows = pd.DataFrame({
+            'Shot': [np.nan] * len(missing_cats),
+            'Club': [df_session['Club'].iloc[0]] * len(missing_cats),
+            'Session': [sessions[0]] * len(missing_cats),
+            'Session_Shot': [''] * len(missing_cats),  # empty string for dummy rows
+            'Smash_Factor_Category': pd.Categorical(missing_cats, categories=all_cats, ordered=True),
+            reference_variable: [np.nan] * len(missing_cats)
+        })
+        df_session = pd.concat([df_session, dummy_rows], ignore_index=True)
+    
     df_session['Smash_Factor_Category'] = df_session['Smash_Factor_Category'].cat.set_categories(all_cats)
+    
+    # Re-sort by shot sequence after adding dummy rows, but filter out empty Session_Shot for plotting
+    df_session = df_session.sort_values(['Session', 'Shot'])
+    df_plot = df_session[df_session['Session_Shot'] != ''].copy()  # Remove dummy rows from actual plotting
 
     color_discrete_map = {
-        '<1.0': 'indigo',
-        '1.0–1.1': 'blue',
-        '1.1–1.2': 'green',
-        '1.2–1.3': 'yellow',
-        '1.3–1.4': 'orange',
-        '>1.4': 'red'
+        '<1.0': 'red',
+        '1.0–1.1': 'orange', 
+        '1.1–1.2': 'yellow',
+        '1.2–1.3': 'lightgreen',
+        '1.3–1.4': 'green',
+        '>1.4': 'darkgreen'
     }
 
     title = f"{reference_variable} for Session(s): {', '.join(sessions)}"
     fig = px.bar(
-        df_session,
+        df_plot,  # Use filtered dataframe without dummy rows
         x='Session_Shot',
         y=reference_variable,
         color='Smash_Factor_Category',
@@ -299,7 +348,9 @@ def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=No
         yaxis_title=reference_variable,
         showlegend=True,
         legend_title_text='',
-        margin=dict(t=60, b=40, l=20, r=20)
+        legend=dict(x=1.02, y=1, xanchor='left', yanchor='top'),
+        margin=dict(t=60, b=40, l=20, r=20),
+        xaxis={'categoryorder': 'array', 'categoryarray': df_plot['Session_Shot'].tolist()}
     )
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     return fig
@@ -405,7 +456,7 @@ with tab2:
     row1_col1, row1_col2 = st.columns(2)
 
     with row1_col1:
-        y_variable_choice = st.selectbox("Select Variable", NUMERIC_COLS, index=4)
+        y_variable_choice = st.selectbox("Select Variable", ALL_COLS, index=4)
         fig_bar = create_bar_chart(df_club, selected_sessions, y_variable_choice,selected_club)
         if fig_bar:
             st.plotly_chart(fig_bar, use_container_width=True)
@@ -429,9 +480,13 @@ with tab2:
             st.plotly_chart(fig_ref, use_container_width=True)
 
     with row2_col2:
+        col2_sub1, col2_sub2 = st.columns([2, 1])
+        with col2_sub1:
+            color_choice = st.selectbox("Color by", CATEGORICAL_COLS, index=0, key="scatter_color")
+        
         fig_xy = px.scatter(df_club, x=y_variable_choice, y=ref_choice,
                             title=f"{ref_choice} vs {y_variable_choice}",
-                            color='Club',
+                            color=color_choice,
                             color_discrete_sequence=px.colors.qualitative.Bold,
                             hover_data=['Time', 'Shot_Type'])
         fig_xy.update_layout(margin=dict(t=40, b=20, l=10, r=10))
