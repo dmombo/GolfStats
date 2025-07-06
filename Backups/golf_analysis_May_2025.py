@@ -6,6 +6,9 @@ import plotly.graph_objects as go
 import plotly.io as pio
 from pandas.api.types import CategoricalDtype
 from scipy.stats import chi2
+from io import BytesIO
+from fpdf import FPDF
+import os
 
 # TO RUN THIS, USE TERMINAL
 #                        streamlit run C:\Users\dmomb\OneDrive\Python\Projects\GolfDec24\golf_analysis_May_2025.py
@@ -377,6 +380,41 @@ def create_fixed_bar_chart(df, sessions, reference_variable="Total_yds", club=No
     fig.for_each_annotation(lambda a: a.update(text=a.text.split("=")[-1]))
     return fig
 
+# Helper to write a plotly figure to an in-memory PNG image
+def fig_to_png_bytes(fig,scale=3):  # Increase scale for higher resolution
+    """Return a ``BytesIO`` object containing a PNG of the figure."""
+    buf = BytesIO()
+    fig.write_image(buf, format="png", scale = scale)
+    buf.seek(0)
+    return buf
+
+# PDF generation function
+def generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist):
+    """Create ``golf_report.pdf`` composed of the provided figures."""
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    figs = [
+        (fig_bar, "Bar Chart"),
+        (fig_hist, "Histogram"),
+        (fig_ref, "Reference Chart"),
+        (fig_xy, "XY Plot")
+    ]
+
+    for fig, title in figs:
+        if fig:
+            image_stream = fig_to_png_bytes(fig,scale=3)
+            temp_path = f"temp_{title.replace(' ', '_')}.png"
+            with open(temp_path, "wb") as f:
+                f.write(image_stream.read())
+            pdf.add_page()
+            pdf.set_font("Arial", size=12)
+            pdf.cell(0, 10, title, ln=True)
+            pdf.image(temp_path, x=10, y=20, w=190)
+            os.remove(temp_path)
+
+    pdf.output("golf_report.pdf")
+
 ##############---------------------------------------------------------------------################################################
 # Run processing
 df, df_sessions, df_golfer = process_df(df)
@@ -521,6 +559,14 @@ with tab2:
         fig_xy.update_layout(margin=dict(t=40, b=20, l=10, r=10))
         st.plotly_chart(fig_xy, use_container_width=True)
         st.markdown("---")
+
+    if st.button("Generate PDF Report"):
+        try:
+            generate_pdf(fig_bar, fig_ref, fig_xy, fig_hist)
+            with open("golf_report.pdf", "rb") as f:
+                st.download_button("Download PDF Report", f.read(), file_name="golf_report.pdf", mime="application/pdf")
+        except Exception as e:
+            st.error(f"Error generating report: {e}")
 
 # List of XY pairs for plotting
 def get_xy_pairs():
